@@ -832,6 +832,8 @@ impl Completer<IambInfo> for IambCompleter {
             IambBufferId::UnreadList => vec![],
             IambBufferId::MentionsList => vec![],
             IambBufferId::InvitesList => vec![],
+            IambBufferId::Explorer => vec![],
+            IambBufferId::ExplorerFilter => vec![],
         }
     }
 }

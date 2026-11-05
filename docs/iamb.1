@@ -58,6 +58,27 @@ A matrix uri or matrix.to link to open on startup. Specified at
 View a list of joined rooms and direct messages.
 .It Sy ":dms"
 View a list of direct messages.
+.It Sy ":explorer"
+Toggle the explorer, a narrow list of rooms and direct messages docked on the
+left side of the current tab.
+If the explorer isn't open, this opens it.
+If it's open but another window is focused, this focuses it.
+If it's focused, this closes it.
+Pressing
+.Sy <Enter>
+on a room opens it in the window to the right of the explorer, splitting the
+tab when there isn't one, so the explorer stays open.
+Typing in Insert mode (for example after
+.Sy i )
+filters the list by room name;
+.Sy j
+and
+.Sy k
+in Normal mode return to the list.
+This is also bound to
+.Sy <C-W>e
+and
+.Sy <C-W><C-E> .
 .It Sy ":logout [user id]"
 Log out of
 .Nm .

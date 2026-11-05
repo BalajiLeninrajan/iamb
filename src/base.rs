@@ -705,11 +705,25 @@ pub enum KeysAction {
     Import(String, String),
 }
 
+/// An action performed with the explorer sidebar.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExplorerAction {
+    /// Open the explorer on the left side of the tab, focus it if it's open but unfocused, or
+    /// close it if it's focused.
+    Toggle,
+
+    /// Open a room in the window to the right of the explorer.
+    Open(OwnedRoomId),
+}
+
 /// An action that the main program loop should execute.
 ///
 /// See [the commands module][super::commands] for where these are usually created.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IambAction {
+    /// Perform an action with the explorer sidebar.
+    Explorer(ExplorerAction),
+
     /// Perform an action against the homeserver.
     Homeserver(HomeserverAction),
 
@@ -793,6 +807,12 @@ impl From<JoinAction> for IambAction {
     }
 }
 
+impl From<ExplorerAction> for IambAction {
+    fn from(act: ExplorerAction) -> Self {
+        IambAction::Explorer(act)
+    }
+}
+
 impl From<SendAction> for IambAction {
     fn from(act: SendAction) -> Self {
         IambAction::Send(act)
@@ -810,6 +830,7 @@ impl ApplicationAction for IambAction {
         match self {
             IambAction::ChangeTheme(..) => SequenceStatus::Break,
             IambAction::ClearUnreads => SequenceStatus::Break,
+            IambAction::Explorer(..) => SequenceStatus::Break,
             IambAction::Homeserver(..) => SequenceStatus::Break,
             IambAction::Keys(..) => SequenceStatus::Break,
             IambAction::Message(..) => SequenceStatus::Break,
@@ -830,6 +851,7 @@ impl ApplicationAction for IambAction {
         match self {
             IambAction::ChangeTheme(..) => SequenceStatus::Atom,
             IambAction::ClearUnreads => SequenceStatus::Atom,
+            IambAction::Explorer(..) => SequenceStatus::Atom,
             IambAction::Homeserver(..) => SequenceStatus::Atom,
             IambAction::Keys(..) => SequenceStatus::Atom,
             IambAction::Message(..) => SequenceStatus::Atom,
@@ -850,6 +872,7 @@ impl ApplicationAction for IambAction {
         match self {
             IambAction::ChangeTheme(..) => SequenceStatus::Ignore,
             IambAction::ClearUnreads => SequenceStatus::Ignore,
+            IambAction::Explorer(..) => SequenceStatus::Ignore,
             IambAction::Homeserver(..) => SequenceStatus::Ignore,
             IambAction::Keys(..) => SequenceStatus::Ignore,
             IambAction::Message(..) => SequenceStatus::Ignore,
@@ -870,6 +893,7 @@ impl ApplicationAction for IambAction {
         match self {
             IambAction::ChangeTheme(..) => false,
             IambAction::ClearUnreads => false,
+            IambAction::Explorer(..) => false,
             IambAction::Homeserver(..) => false,
             IambAction::Message(..) => false,
             IambAction::Space(..) => false,
@@ -2795,6 +2819,9 @@ pub enum IambId {
 
     /// The `:invites` window.
     InvitesList,
+
+    /// The `:explorer` sidebar.
+    Explorer,
 }
 
 impl Display for IambId {
@@ -2828,6 +2855,7 @@ impl Display for IambId {
             IambId::UnreadList => f.write_str("iamb://unreads"),
             IambId::MentionsList => f.write_str("iamb://mentions"),
             IambId::InvitesList => f.write_str("iamb://invites"),
+            IambId::Explorer => f.write_str("iamb://explorer"),
         }
     }
 }
@@ -3005,6 +3033,13 @@ impl Visitor<'_> for IambIdVisitor {
 
                 Ok(IambId::InvitesList)
             },
+            Some("explorer") => {
+                if url.path() != "" {
+                    return Err(E::custom("iamb://explorer takes no path"));
+                }
+
+                Ok(IambId::Explorer)
+            },
             Some(s) => Err(E::custom(format!("{s:?} is not a valid window"))),
             None => Err(E::custom("Invalid iamb window URL")),
         }
@@ -3087,6 +3122,12 @@ pub enum IambBufferId {
 
     /// The `:invites` window.
     InvitesList,
+
+    /// The list of rooms in the `:explorer` sidebar.
+    Explorer,
+
+    /// The filter bar in the `:explorer` sidebar.
+    ExplorerFilter,
 }
 
 impl IambBufferId {
@@ -3107,6 +3148,8 @@ impl IambBufferId {
             IambBufferId::UnreadList => IambId::UnreadList,
             IambBufferId::MentionsList => IambId::MentionsList,
             IambBufferId::InvitesList => IambId::InvitesList,
+            IambBufferId::Explorer => IambId::Explorer,
+            IambBufferId::ExplorerFilter => IambId::Explorer,
         };
 
         Some(id)

@@ -206,7 +206,8 @@ fn setup_screen(
 
             for tab in tabs.into_iter() {
                 let tab = config_tab_to_desc(tab, store)?;
-                let tab = tab.to_layout(area.into(), store)?;
+                let mut tab = tab.to_layout(area.into(), store)?;
+                windows::explorer::resize_docked_explorer(&mut tab, store)?;
                 list.push(tab);
             }
 
@@ -616,6 +617,10 @@ impl Application {
                 self.screen.current_window_mut()?.focus_toggle();
 
                 None
+            },
+
+            IambAction::Explorer(act) => {
+                windows::explorer::explorer_command(act, &mut self.screen, &ctx, store)?
             },
 
             IambAction::Homeserver(act) => {
