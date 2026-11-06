@@ -63,7 +63,17 @@
 
         # Build *just* the cargo dependencies, so we can reuse
         # all of that work (e.g. via cachix) when running in CI
-        cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+        cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
+          # mkDummySrc stubs every path crate, which would replace the patched
+          # unicode-width (vendor/unicode-width) with an empty library.
+          dummySrc = craneLib.mkDummySrc {
+            inherit src;
+            extraDummyScript = ''
+              rm -rf $out/vendor/unicode-width
+              cp -r ${./vendor/unicode-width} $out/vendor/unicode-width
+            '';
+          };
+        });
 
         # Build the actual crate
         iamb = craneLib.buildPackage (commonArgs // {
