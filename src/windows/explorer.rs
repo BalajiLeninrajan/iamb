@@ -612,7 +612,7 @@ mod tests {
         let area = Rect::new(0, 0, 100, 40);
         // Splits at the top level stack windows, so put the explorer and the chat list side by
         // side in a nested split.
-        let row = WindowLayoutDescription::Split {
+        let row: WindowLayoutDescription<IambInfo> = WindowLayoutDescription::Split {
             children: vec![
                 WindowLayoutDescription::Window { window: IambId::Explorer, length: None },
                 WindowLayoutDescription::Window { window: IambId::ChatList, length: None },
