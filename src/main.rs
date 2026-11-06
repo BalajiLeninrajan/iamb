@@ -60,6 +60,7 @@ use crate::windows::IambWindow;
 use crate::worker::{ClientWorker, LoginStyle, create_room};
 
 mod base;
+mod bridge;
 mod commands;
 mod completions;
 mod config;
