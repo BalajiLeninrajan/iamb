@@ -1,0 +1,66 @@
+# Fork-only: build an x86_64 RPM on every push and PR, and keep a rolling
+# `nightly` prerelease pointing at main, so Fedora can install the fork with
+#   sudo dnf install https://github.com/BalajiLeninrajan/iamb/releases/download/nightly/iamb-nightly.x86_64.rpm
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+name: Fedora RPM
+
+concurrency:
+  group: fedora-rpm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rpm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TARGET: x86_64-unknown-linux-gnu
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - name: Install Rust (stable)
+      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+      with:
+          toolchain: stable
+          targets: ${{ env.TARGET }}
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.9
+    - name: 'Build: binary'
+      run: cargo +stable build --profile=release-lto --locked --target "$TARGET"
+    - name: 'Package: rpm'
+      run: |
+        cargo +stable install --locked cargo-generate-rpm
+        # Same version as Cargo.toml; the release field counts up per run so dnf sees each build as newer.
+        cargo +stable generate-rpm --profile=release-lto --target "$TARGET" \
+          --set-metadata "release = \"${GITHUB_RUN_NUMBER}.g${GITHUB_SHA::7}\""
+        cp target/"$TARGET"/generate-rpm/iamb-*.rpm target/iamb-nightly.x86_64.rpm
+    - name: 'Upload: rpm artifact'
+      uses: actions/upload-artifact@v4
+      with:
+        name: iamb-rpm
+        path: target/${{ env.TARGET }}/generate-rpm/iamb-*.rpm
+    - name: 'Publish: nightly release'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh release delete nightly --yes --cleanup-tag || true
+        gh release create nightly --prerelease --target "$GITHUB_SHA" \
+          --title "Nightly ${GITHUB_SHA::7}" \
+          --notes "Built from ${GITHUB_SHA} by run ${GITHUB_RUN_NUMBER}." \
+          target/"$TARGET"/generate-rpm/iamb-*.rpm target/iamb-nightly.x86_64.rpm
