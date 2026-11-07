@@ -420,7 +420,13 @@ fn explorer_toggle(
     if nwins > 1 {
         // The explorer opened next to the focused window only, so move it out to span the
         // whole left side of the tab, and then restore its width.
+        //
+        // Moving a window doesn't recalculate the layout's areas, and resizing starts from the
+        // old ones, which would leave the explorer with no width. Evening out the columns first
+        // recalculates them, so the exact resize afterwards has real sizes to work from.
         let dock = WindowAction::MoveSide(MoveDir2D::Left);
+        let equalize =
+            WindowAction::Resize(FocusChange::Current, Axis::Vertical, SizeChange::Equal);
         let resize = WindowAction::Resize(
             FocusChange::Current,
             Axis::Vertical,
@@ -428,6 +434,7 @@ fn explorer_toggle(
         );
 
         screen.window_command(&dock, ctx, store)?;
+        screen.window_command(&equalize, ctx, store)?;
         screen.window_command(&resize, ctx, store)?;
     }
 
