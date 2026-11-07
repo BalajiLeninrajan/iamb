@@ -11,7 +11,6 @@ use crate::base::{
     CreateRoomFlags,
     CreateRoomType,
     DownloadFlags,
-    ExplorerAction,
     HomeserverAction,
     IambJoinRule,
     KeysAction,
@@ -507,17 +506,6 @@ fn iamb_unreads(desc: CommandDescription, ctx: &mut ProgContext) -> ProgResult {
             return Ok(step);
         },
     }
-}
-
-fn iamb_explorer(desc: CommandDescription, ctx: &mut ProgContext) -> ProgResult {
-    if !desc.arg.text.is_empty() {
-        return Result::Err(CommandError::InvalidArgument);
-    }
-
-    let toggle = IambAction::from(ExplorerAction::Toggle);
-    let step = CommandStep::Continue(toggle.into(), ctx.context.clone());
-
-    return Ok(step);
 }
 
 fn iamb_mentions(desc: CommandDescription, ctx: &mut ProgContext) -> ProgResult {
@@ -1202,11 +1190,6 @@ pub fn add_iamb_commands(cmds: &mut ProgramCommands) {
     cmds.add_command(ProgramCommand { name: "open".into(), aliases: vec![], f: iamb_open });
     cmds.add_command(ProgramCommand { name: "edit".into(), aliases: vec![], f: iamb_edit });
     cmds.add_command(ProgramCommand {
-        name: "explorer".into(),
-        aliases: vec![],
-        f: iamb_explorer,
-    });
-    cmds.add_command(ProgramCommand {
         name: "follow".into(),
         aliases: vec![],
         f: iamb_follow,
@@ -1391,19 +1374,6 @@ mod tests {
 
         assert_eq!(cmds.input_cmd("c", ctx.clone()).unwrap(), expected);
         assert_eq!(cmds.input_cmd("cc", ctx.clone()).unwrap(), expected);
-    }
-
-    #[test]
-    fn test_cmd_explorer() {
-        let mut cmds = setup_test_commands();
-        let ctx = EditContext::default();
-
-        let res = cmds.input_cmd("explorer", ctx.clone()).unwrap();
-        let act = IambAction::from(ExplorerAction::Toggle);
-        assert_eq!(res, vec![(act.into(), ctx.clone())]);
-
-        let res = cmds.input_cmd("explorer foo", ctx.clone());
-        assert_eq!(res, Err(CommandError::InvalidArgument));
     }
 
     #[test]

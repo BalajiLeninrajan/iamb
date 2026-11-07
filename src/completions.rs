@@ -652,9 +652,9 @@ fn complete_cmdarg(
         "verify" => complete_iamb_verify(args, store),
 
         // These have no arguments
-        "cancel" | "chats" | "dms" | "editor" | "edit" | "explorer" | "forget" | "invites" |
-        "leave" | "members" | "mentions" | "message" | "pin" | "pinned" | "unpin" | "replied" |
-        "reply" | "rooms" | "welcome" => vec![],
+        "cancel" | "chats" | "dms" | "editor" | "edit" | "forget" | "invites" | "leave" |
+        "members" | "mentions" | "message" | "pin" | "pinned" | "unpin" | "replied" | "reply" |
+        "rooms" | "welcome" => vec![],
 
         "abo" | "aboveleft" | "bel" | "belowright" | "hor" | "horizontal" | "lefta" |
         "leftabove" | "rightb" | "rightbelow" | "tab" | "vert" | "vertical" => {
@@ -832,8 +832,6 @@ impl Completer<IambInfo> for IambCompleter {
             IambBufferId::UnreadList => vec![],
             IambBufferId::MentionsList => vec![],
             IambBufferId::InvitesList => vec![],
-            IambBufferId::Explorer => vec![],
-            IambBufferId::ExplorerFilter => vec![],
         }
     }
 }

@@ -37,7 +37,6 @@ default_markup = "markdown"
 default_register = "\""
 default_room = "#iamb-users:0x.badd.cafe"
 default_split = "vertical"
-explorer_width = 30
 external_edit_file_suffix = ".md"
 ignorecase = false
 input_prompt = "❯ "
