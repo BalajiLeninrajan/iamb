@@ -321,6 +321,14 @@ Show
 and
 .Dq Calmed
 if the room doesn't notify for all new messages.
+.It Sy network
+Show the chat network a bridged room belongs to, such as
+.Dq WhatsApp ,
+using the room's
+.Sy m.bridge
+or
+.Sy uk.half-shot.bridge
+state.
 .It Sy tags
 Show if the room has been tagged, such as a Favorite or Low Priority room.
 .It Sy type
@@ -345,6 +353,19 @@ or
 See
 .Sx "SORTING LISTS"
 for more details.
+.It Sy service_member_display
+Defines whether to show a room's service members, such as bridge bots.
+Rooms list these in their
+.Sy io.element.functional_members
+state.
+When
+.Sy false ,
+service members are left out of
+.Sy :members ,
+and state events that they send or that are about them (like the bot joining)
+aren't shown in the timeline.
+Defaults to
+.Sy true .
 .It Sy state_event_display
 Defines whether the state events like joined or left are shown.
 .It Sy sync_delay_ms
@@ -689,6 +710,11 @@ Put lowpriority rooms after other rooms.
 Put rooms with unread mentions before other rooms.
 .It Sy name
 Sort rooms by alphabetically ascending room name.
+.It Sy network
+Sort bridged rooms by alphabetically ascending network name (see the
+.Sy network
+room label), and put them before rooms that aren't bridged.
+Each network gets its own section in the list.
 .It Sy notifications
 Put rooms with unread notifications before other rooms.
 .It Sy recent
@@ -733,6 +759,11 @@ in front of any value to flip the order.
 .Bd -literal -offset indent
 [settings.sort]
 members = ["server", "~localpart"]
+.Ed
+.Ss Example 2: Group bridged chats by network, most recent first
+.Bd -literal -offset indent
+[settings.sort]
+chats = ["network", "recent"]
 .Ed
 .Sh TERMINAL
 The

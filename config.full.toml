@@ -50,8 +50,9 @@ reaction_display = true
 reaction_shortcode_display = false
 read_receipt_display = true
 read_receipt_send = true
-room_labels = ["membership", "muted", "tags"]
+room_labels = ["membership", "muted", "network", "tags"]
 request_timeout = 10000
+service_member_display = true
 sync_delay_ms = 1000
 # strftime format for the per-message time gutter (same specifier reference as
 # date_format). This string is the full gutter text, including brackets and
@@ -82,6 +83,7 @@ headers.X-Proxy-Config = "foobar"
 # Settings related to overriding how lists of rooms are sorted:
 [settings.sort]
 rooms = ["favorite", "lowpriority", "unread", "name"]
+chats = ["network", "recent"]
 members = ["power", "id"]
 
 # Settings related to how iamb interacts with the terminal:

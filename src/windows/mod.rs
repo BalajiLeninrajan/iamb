@@ -233,6 +233,15 @@ fn room_cmp<T: RoomLikeItem>(
 
             b.cmp(&a)
         },
+        SortFieldRoom::Network => {
+            // sort bridged rooms by network name, before rooms that aren't bridged.
+            match (a.network(), b.network()) {
+                (Some(a), Some(b)) => collator.collate(a, b),
+                (None, None) => Ordering::Equal,
+                (None, Some(_)) => Ordering::Greater,
+                (Some(_), None) => Ordering::Less,
+            }
+        },
     }
 }
 
@@ -338,6 +347,7 @@ impl SortedSection for SortFieldRoom {
                 let server = room.server_name()?;
                 ListSectionHeader::Server(server.to_string())
             },
+            SortFieldRoom::Network => ListSectionHeader::Network(room.network()?.to_owned()),
             SortFieldRoom::Space if room.room_type().is_space() => ListSectionHeader::Spaces,
             SortFieldRoom::Mentions if room.has_mention() => ListSectionHeader::UnreadMentions,
             SortFieldRoom::Notifications if room.has_notification() => ListSectionHeader::Unreads,
@@ -396,6 +406,7 @@ pub enum ListSectionHeader {
     LowPriority,
     Moderators,
     ModeratorsPlus,
+    Network(String),
     NotJoined,
     Rooms,
     Server(String),
@@ -437,6 +448,7 @@ impl From<ListSectionHeader> for Line<'static> {
             ListSectionHeader::LowPriority => Line::raw("Low Priority").bold(),
             ListSectionHeader::Moderators => Line::raw("Moderators").bold(),
             ListSectionHeader::ModeratorsPlus => Line::raw("Moderators++").bold(),
+            ListSectionHeader::Network(network) => Line::raw(network).bold(),
             ListSectionHeader::NotJoined => Line::raw("Not Joined").bold(),
             ListSectionHeader::Rooms => Line::raw("Rooms").bold(),
             ListSectionHeader::Server(s) => Line::raw(format!("Server: {s}")).bold(),
@@ -459,6 +471,7 @@ trait RoomLikeItem {
     fn alias(&self) -> Option<&RoomAliasId>;
     fn name(&self) -> &str;
     fn membership(&self) -> MatrixRoomState;
+    fn network(&self) -> Option<&str>;
 
     fn server_name(&self) -> Option<&ServerName> {
         self.alias()
@@ -785,12 +798,20 @@ impl WindowOps<IambInfo> for IambWindow {
                     *last_fetch = Some(Instant::now());
                 }
 
+                // Leave out bridge bots and other service members if configured to.
+                let hidden = if store.application.settings.tunables.service_member_display {
+                    Default::default()
+                } else {
+                    let room = store.application.worker.client.get_room(room_id);
+                    room.and_then(|room| room.service_members()).unwrap_or_default()
+                };
+
                 let info = store.application.rooms.get_or_default(room_id.clone());
 
                 let mut items = info
                     .memberships
                     .values()
-                    .filter(|m| m.is_active())
+                    .filter(|m| m.is_active() && !hidden.contains(m.user_id()))
                     .map(|m| MemberItem::new(m.clone(), room_id.clone()))
                     .collect::<Vec<_>>();
 
@@ -1425,6 +1446,7 @@ pub struct GenericRoomItem {
     unread: UnreadInfo,
     room_type_show: bool,
     room_type: RoomType,
+    network: Option<String>,
 }
 
 impl GenericRoomItem {
@@ -1441,6 +1463,7 @@ impl GenericRoomItem {
         let mut unread = info.unreads(room);
         let room_flags = info.flags;
         let tags = info.tags.clone();
+        let network = info.network.clone();
 
         if room.is_space() &&
             let Some(space_info) = spaces.get(&room_id)
@@ -1471,6 +1494,7 @@ impl GenericRoomItem {
             room_type,
             room_type_show: true,
             section: None,
+            network,
         }
     }
 
@@ -1498,6 +1522,7 @@ impl GenericRoomItem {
             room_type,
             room_type_show: true,
             section: None,
+            network: None,
         }
     }
 
@@ -1557,6 +1582,11 @@ impl GenericRoomItem {
                         labels.push(vec![Span::styled(label, tags_style)]);
                     }
                 },
+                RoomLabel::Network => {
+                    if let Some(network) = &self.network {
+                        labels.push(vec![Span::styled(network.as_str(), tags_style)]);
+                    }
+                },
                 RoomLabel::Tags => {
                     if let Some(tags) = &self.tags {
                         labels.extend(tags.keys().map(|t| tag_to_span(t, tags_style)));
@@ -1608,6 +1638,10 @@ impl RoomLikeItem for GenericRoomItem {
 
     fn has_notification(&self) -> bool {
         self.unread.has_notification()
+    }
+
+    fn network(&self) -> Option<&str> {
+        self.network.as_deref()
     }
 }
 
@@ -1992,6 +2026,7 @@ mod tests {
         pub name: &'static str,
         pub unread: UnreadInfo,
         pub membership: MatrixRoomState,
+        pub network: Option<&'static str>,
     }
 
     impl RoomLikeItem for &TestRoomItem {
@@ -2034,6 +2069,10 @@ mod tests {
         fn membership(&self) -> MatrixRoomState {
             self.membership
         }
+
+        fn network(&self) -> Option<&str> {
+            self.network
+        }
     }
 
     #[test]
@@ -2046,6 +2085,7 @@ mod tests {
             alias: Some(room_alias_id!("#room1:example.com").to_owned()),
             tags: None,
             membership: MatrixRoomState::Joined,
+            network: None,
             unread: UnreadInfo::default(),
             room_flags: RoomInfoFlags::NONE,
             room_type_show: true,
@@ -2070,6 +2110,7 @@ mod tests {
             name: "Z",
             unread: UnreadInfo::default(),
             membership: MatrixRoomState::Joined,
+            network: None,
             room_type: RoomType::Room,
         };
 
@@ -2080,6 +2121,7 @@ mod tests {
             name: "Unnamed Room",
             unread: UnreadInfo::default(),
             membership: MatrixRoomState::Joined,
+            network: None,
             room_type: RoomType::Room,
         };
 
@@ -2090,6 +2132,7 @@ mod tests {
             name: "Cool Room",
             unread: UnreadInfo::default(),
             membership: MatrixRoomState::Joined,
+            network: None,
             room_type: RoomType::Room,
         };
 
@@ -2145,6 +2188,7 @@ mod tests {
                 unread_mentions: 0,
             },
             membership: MatrixRoomState::Joined,
+            network: None,
             room_type: RoomType::Room,
         };
 
@@ -2161,6 +2205,7 @@ mod tests {
                 unread_mentions: 0,
             },
             membership: MatrixRoomState::Joined,
+            network: None,
             room_type: RoomType::Room,
         };
 
@@ -2177,6 +2222,7 @@ mod tests {
                 unread_mentions: 0,
             },
             membership: MatrixRoomState::Joined,
+            network: None,
             room_type: RoomType::Room,
         };
 
@@ -2206,6 +2252,7 @@ mod tests {
             name: "Old room 1",
             unread: UnreadInfo::default(),
             membership: MatrixRoomState::Joined,
+            network: None,
             room_type: RoomType::Room,
         };
 
@@ -2216,6 +2263,7 @@ mod tests {
             name: "Old room 2",
             unread: UnreadInfo::default(),
             membership: MatrixRoomState::Joined,
+            network: None,
             room_type: RoomType::Room,
         };
 
@@ -2226,6 +2274,7 @@ mod tests {
             name: "New Fancy Room",
             unread: UnreadInfo::default(),
             membership: MatrixRoomState::Invited,
+            network: None,
             room_type: RoomType::Room,
         };
 
@@ -2263,6 +2312,7 @@ mod tests {
             name: "Room E",
             unread: UnreadInfo::default(),
             membership: MatrixRoomState::Joined,
+            network: None,
             room_type: RoomType::Room,
         };
 
@@ -2274,6 +2324,7 @@ mod tests {
             name: "Room D",
             unread: UnreadInfo::default(),
             membership: MatrixRoomState::Joined,
+            network: None,
             room_type: RoomType::Room,
         };
 
@@ -2285,6 +2336,7 @@ mod tests {
             name: "Room C",
             unread: UnreadInfo::default(),
             membership: MatrixRoomState::Invited,
+            network: None,
             room_type: RoomType::Room,
         };
 
@@ -2296,6 +2348,7 @@ mod tests {
             name: "Room B",
             unread: UnreadInfo::default(),
             membership: MatrixRoomState::Invited,
+            network: None,
             room_type: RoomType::Room,
         };
 
@@ -2307,6 +2360,7 @@ mod tests {
             name: "Room A",
             unread: UnreadInfo::default(),
             membership: MatrixRoomState::Invited,
+            network: None,
             room_type: RoomType::Room,
         };
 
@@ -2327,5 +2381,51 @@ mod tests {
         ];
         rooms.sort_by(|a, b| room_fields_cmp(a, b, fields, collator));
         assert_eq!(rooms, vec![&room5, &room1, &room3, &room4, &room2]);
+    }
+
+    #[test]
+    fn test_sort_room_networks() {
+        let mut collator = Collator::default();
+        let collator = &mut collator;
+        let server = server_name!("beeper.local");
+
+        let room = |name, network| {
+            TestRoomItem {
+                room_id: RoomId::new_v1(server).to_owned(),
+                tags: vec![],
+                alias: None,
+                name,
+                unread: UnreadInfo::default(),
+                membership: MatrixRoomState::Joined,
+                network,
+                room_type: RoomType::DM,
+            }
+        };
+
+        let room1 = room("Alice", Some("WhatsApp"));
+        let room2 = room("Bob", Some("Google Messages"));
+        let room3 = room("Carol", None);
+        let room4 = room("Dave", Some("WhatsApp"));
+
+        // Group by network, with unbridged rooms last, and break ties on name:
+        let mut rooms = vec![&room1, &room2, &room3, &room4];
+        let fields = &[
+            SortColumn(SortFieldRoom::Network, SortOrder::Ascending),
+            SortColumn(SortFieldRoom::Name, SortOrder::Ascending),
+        ];
+        rooms.sort_by(|a, b| room_fields_cmp(a, b, fields, collator));
+        assert_eq!(rooms, vec![&room2, &room1, &room4, &room3]);
+
+        // Each network gets its own section, and unbridged rooms fall through to the next field:
+        let sections = rooms
+            .iter()
+            .map(|room| ListSectionHeader::for_room(room, fields))
+            .collect::<Vec<_>>();
+        assert_eq!(sections, vec![
+            Some(ListSectionHeader::Network("Google Messages".into())),
+            Some(ListSectionHeader::Network("WhatsApp".into())),
+            Some(ListSectionHeader::Network("WhatsApp".into())),
+            Some(ListSectionHeader::Rooms),
+        ]);
     }
 }

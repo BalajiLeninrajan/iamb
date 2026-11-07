@@ -738,6 +738,7 @@ impl Visitor<'_> for EncryptionIndicatorLocationVisitor {
 pub enum RoomLabel {
     Membership,
     Muted,
+    Network,
     Tags,
     Type,
     Unread,
@@ -1129,6 +1130,7 @@ pub struct TunableValues {
     pub request_timeout: u64,
     pub sort: SortValues,
     pub state_event_display: bool,
+    pub service_member_display: bool,
     pub sync_delay_ms: u64,
     pub theme: String,
     pub typing_notice_send: bool,
@@ -1198,6 +1200,7 @@ pub struct Tunables {
     pub room_labels: Option<Vec<RoomLabel>>,
     pub request_timeout: Option<u64>,
     pub state_event_display: Option<bool>,
+    pub service_member_display: Option<bool>,
     pub sync_delay_ms: Option<u64>,
     pub theme: Option<String>,
     pub typing_notice_send: Option<bool>,
@@ -1266,6 +1269,7 @@ impl Tunables {
             room_labels: self.room_labels.or(other.room_labels),
             request_timeout: self.request_timeout.or(other.request_timeout),
             state_event_display: self.state_event_display.or(other.state_event_display),
+            service_member_display: self.service_member_display.or(other.service_member_display),
             sync_delay_ms: self.sync_delay_ms.or(other.sync_delay_ms),
             theme: self.theme.or(other.theme),
             typing_notice_send: self.typing_notice_send.or(other.typing_notice_send),
@@ -1323,6 +1327,7 @@ impl Tunables {
             room_labels: self.room_labels.unwrap_or_else(|| DEFAULT_ROOM_LABELS.to_vec()),
             request_timeout: self.request_timeout.unwrap_or(DEFAULT_REQ_TIMEOUT),
             state_event_display: self.state_event_display.unwrap_or(true),
+            service_member_display: self.service_member_display.unwrap_or(true),
             sync_delay_ms: self.sync_delay_ms.unwrap_or(DEFAULT_SYNC_FREQUENCY),
             theme: self.theme.unwrap_or_else(|| "default".to_string()),
             typing_notice_send: self.typing_notice_send.unwrap_or(true),
@@ -2288,6 +2293,16 @@ time_format = "%"
     }
 
     #[test]
+    fn test_parse_network_sort() {
+        let sort: Vec<SortColumn<SortFieldRoom>> =
+            serde_json::from_str(r#"["network","~recent"]"#).unwrap();
+        assert_eq!(sort, vec![
+            SortColumn(SortFieldRoom::Network, SortOrder::Ascending),
+            SortColumn(SortFieldRoom::Recent, SortOrder::Descending),
+        ]);
+    }
+
+    #[test]
     fn test_parse_default_space_sort() {
         let sort: Vec<SortColumn<SortFieldSpace>> =
             serde_json::from_str(r#"["space","joined","spaceorder"]"#).unwrap();
@@ -2528,6 +2543,7 @@ time_format = "%"
         assert_eq!(RoomLabel::Membership, serde_json::from_str(r#""membership""#).unwrap());
         assert_eq!(RoomLabel::Tags, serde_json::from_str(r#""tags""#).unwrap());
         assert_eq!(RoomLabel::Type, serde_json::from_str(r#""type""#).unwrap());
+        assert_eq!(RoomLabel::Network, serde_json::from_str(r#""network""#).unwrap());
     }
 
     #[test]
