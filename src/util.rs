@@ -345,4 +345,17 @@ pub mod tests {
         assert_eq!(iter.next(), Some((Cow::Borrowed("Ｎ"), 2)));
         assert_eq!(iter.next(), None);
     }
+
+    #[test]
+    fn test_tamil_vowel_sign_widths() {
+        use unicode_width::UnicodeWidthStr;
+
+        // ா and ௗ take a cell, as in Ghostty's grapheme clustering; see vendor/unicode-width.
+        assert_eq!(UnicodeWidthStr::width("நா"), 2);
+        assert_eq!(UnicodeWidthStr::width("பாட்டி"), 5);
+        assert_eq!(UnicodeWidthStr::width("அம்மா"), 4);
+        // Other Tamil signs keep their upstream widths: ் and ீ are zero.
+        assert_eq!(UnicodeWidthStr::width("ட்"), 1);
+        assert_eq!(UnicodeWidthStr::width("டீ"), 1);
+    }
 }

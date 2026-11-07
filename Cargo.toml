@@ -182,3 +182,7 @@ assets = [
     { source = "docs/iamb.svg", dest = "assets/iamb.svg", mode = "644"},
     { source = "docs/iamb.metainfo.xml", dest = "assets/iamb.metainfo.xml", mode = "644"},
 ]
+
+[patch.crates-io]
+# Tamil ா and ௗ count as one column, so iamb's layout agrees with Ghostty. See vendor/unicode-width/README.iamb.md.
+unicode-width = { path = "vendor/unicode-width" }
