@@ -8,7 +8,7 @@ use modalkit::env::vim::VimMode;
 use modalkit::env::vim::keybindings::{InputStep, VimBindings};
 use modalkit::keybindings::{EdgeEvent, EdgeRepeat, InputBindings};
 
-use crate::base::{ExplorerAction, Keybindings, MATRIX_ID_WORD};
+use crate::base::{Keybindings, MATRIX_ID_WORD};
 use crate::config::Keys;
 use crate::prelude::*;
 
@@ -30,10 +30,8 @@ pub fn setup_keybindings(tunables: &TunableValues) -> Keybindings {
     vim.setup(&mut ism);
 
     let ctrl_w = "<C-W>".parse::<TerminalKey>().unwrap();
-    let ctrl_e = "<C-E>".parse::<TerminalKey>().unwrap();
     let ctrl_m = "<C-M>".parse::<TerminalKey>().unwrap();
     let ctrl_z = "<C-Z>".parse::<TerminalKey>().unwrap();
-    let key_e_lc = "e".parse::<TerminalKey>().unwrap();
     let key_m_lc = "m".parse::<TerminalKey>().unwrap();
     let key_z_lc = "z".parse::<TerminalKey>().unwrap();
     let shift_enter = "<S-Enter>".parse::<TerminalKey>().unwrap();
@@ -58,16 +56,6 @@ pub fn setup_keybindings(tunables: &TunableValues) -> Keybindings {
     ism.add_mapping(VimMode::Visual, &cwm, &stoggle);
     ism.add_mapping(VimMode::Normal, &cwcm, &stoggle);
     ism.add_mapping(VimMode::Visual, &cwcm, &stoggle);
-
-    let cwe = vec![once(&ctrl_w), once(&key_e_lc)];
-    let cwce = vec![once(&ctrl_w), once(&ctrl_e)];
-    let explorer = IambStep::new()
-        .actions(vec![IambAction::from(ExplorerAction::Toggle).into()])
-        .goto(VimMode::Normal);
-    ism.add_mapping(VimMode::Normal, &cwe, &explorer);
-    ism.add_mapping(VimMode::Visual, &cwe, &explorer);
-    ism.add_mapping(VimMode::Normal, &cwce, &explorer);
-    ism.add_mapping(VimMode::Visual, &cwce, &explorer);
 
     let shift_enter = vec![once(&shift_enter)];
     let newline = IambStep::new().actions(vec![

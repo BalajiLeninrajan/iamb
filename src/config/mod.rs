@@ -95,7 +95,6 @@ const DEFAULT_ROOM_LABELS: [RoomLabel; 5] = [
 const DEFAULT_ENABLE_TITLE: bool = true;
 const DEFAULT_REQ_TIMEOUT: u64 = 120;
 const DEFAULT_SYNC_FREQUENCY: u64 = 250;
-const DEFAULT_EXPLORER_WIDTH: u16 = 30;
 
 const DEFAULT_ENC_INDICATOR_LOC: EncryptionIndicatorLocation = EncryptionIndicatorLocation::PROMPT;
 const DEFAULT_ICON_ENC: Cow<'static, str> = Cow::Borrowed("[E] ");
@@ -1153,7 +1152,6 @@ pub struct TunableValues {
     pub input_prompt: Option<String>,
     pub members_split: Option<SplitDirection>,
     pub default_split: SplitDirection,
-    pub explorer_width: u16,
     pub ssl_verify: bool,
     pub cache_policy: MediaRetentionPolicy,
     pub send_on_enter: bool,
@@ -1221,7 +1219,6 @@ pub struct Tunables {
     pub input_prompt: Option<String>,
     pub members_split: Option<SplitDirection>,
     pub default_split: Option<SplitDirection>,
-    pub explorer_width: Option<u16>,
     pub ssl_verify: Option<bool>,
     pub cache_policy: Option<MediaRetentionPolicy>,
     pub send_on_enter: Option<bool>,
@@ -1291,7 +1288,6 @@ impl Tunables {
             input_prompt: self.input_prompt.or(other.input_prompt),
             members_split: self.members_split.or(other.members_split),
             default_split: self.default_split.or(other.default_split),
-            explorer_width: self.explorer_width.or(other.explorer_width),
             ssl_verify: self.ssl_verify.or(other.ssl_verify),
             cache_policy: self.cache_policy.or(other.cache_policy),
             send_on_enter: self.send_on_enter.or(other.send_on_enter),
@@ -1353,7 +1349,6 @@ impl Tunables {
             input_prompt: self.input_prompt,
             members_split: self.members_split,
             default_split: self.default_split.unwrap_or_default(),
-            explorer_width: self.explorer_width.unwrap_or(DEFAULT_EXPLORER_WIDTH),
             ssl_verify: self.ssl_verify.unwrap_or(true),
             cache_policy: self.cache_policy.unwrap_or_default(),
             send_on_enter: self.send_on_enter.unwrap_or(true),
@@ -2410,7 +2405,6 @@ time_format = "%"
         let room = WindowPath::RoomId(OwnedRoomId::try_from("!room:example.com").unwrap());
         let dms = WindowPath::Window(IambId::DirectList);
         let welcome = WindowPath::Window(IambId::Welcome);
-        let explorer = WindowPath::Window(IambId::Explorer);
 
         let res: Layout = serde_json::from_str("{\"style\": \"restore\"}").unwrap();
         assert_eq!(res, Layout::Restore);
@@ -2438,8 +2432,7 @@ time_format = "%"
                     {\"window\":\"!room:example.com\"},\
                     {\"split\":[\
                         {\"window\":\"iamb://dms\"},\
-                        {\"window\":\"iamb://welcome\"},\
-                        {\"window\":\"iamb://explorer\"}\
+                        {\"window\":\"iamb://welcome\"}\
                     ]}\
                 ]}\
             ]}",
@@ -2452,11 +2445,9 @@ time_format = "%"
             ],
         };
         let split2 = WindowLayout::Split {
-            split: vec![
-                WindowLayout::Window { window: dms },
-                WindowLayout::Window { window: welcome },
-                WindowLayout::Window { window: explorer },
-            ],
+            split: vec![WindowLayout::Window { window: dms }, WindowLayout::Window {
+                window: welcome,
+            }],
         };
         let split3 = WindowLayout::Split {
             split: vec![WindowLayout::Window { window: room }, split2],
