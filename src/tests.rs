@@ -210,6 +210,7 @@ pub fn mock_tunables() -> TunableValues {
         tabstop: 4,
         members_split: Default::default(),
         default_split: Default::default(),
+        explorer_width: 30,
         ssl_verify: true,
         cache_policy: Default::default(),
         send_on_enter: true,

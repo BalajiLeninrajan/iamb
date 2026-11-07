@@ -191,6 +191,14 @@ Configuration subsection for specific settings related to room encryption.
 See
 .Sx ENCRYPTION
 for more details.
+.It Sy explorer_width
+The width in columns of the window opened by
+.Sy :explorer .
+Defaults to
+.Sy 30 .
+An explorer that starts off a tab in a configured layout (see
+.Sx "STARTUP LAYOUT" )
+also gets resized to this width.
 .It Sy external_edit_file_suffix
 Suffix to append to temporary file names when using the :editor command. Defaults to .md.
 .It Sy image_preview
@@ -650,7 +658,9 @@ Defaults to
 .It Sy chats
 How to sort the
 .Sy :chats
-window.
+and
+.Sy :explorer
+windows.
 Defaults to the
 .Sy rooms
 value.
@@ -1165,6 +1175,27 @@ window = "iamb://rooms"
 split = [
     { "window" = "#iamb-users:0x.badd.cafe" },
     { "window" = "#iamb-dev:0x.badd.cafe" }
+]
+.Ed
+.Ss Example 3: Start with the explorer docked on the left
+Windows in a top-level
+.Sy split
+are stacked on top of each other, so nest a second
+.Sy split
+to place the explorer beside another window.
+The explorer gets resized to
+.Sy explorer_width
+when it's the first window in a tab.
+.Bd -literal -offset indent
+[layout]
+style = "config"
+
+[[layout.tabs]]
+split = [
+    { split = [
+        { "window" = "iamb://explorer" },
+        { "window" = "iamb://chats" }
+    ] }
 ]
 .Ed
 .Sh "CUSTOM COMMAND ALIASES"

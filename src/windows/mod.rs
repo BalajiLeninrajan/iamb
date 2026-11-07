@@ -36,10 +36,12 @@ use crate::config::RoomLabel;
 use crate::config::theme::ThemeRoomsValues;
 use crate::prelude::*;
 use crate::resolve_mxid;
+use crate::windows::explorer::ExplorerState;
 use crate::windows::room::{RoomState, room_command};
 use crate::windows::verify::VerifyItem;
 use crate::windows::welcome::WelcomeState;
 
+pub mod explorer;
 pub mod room;
 pub mod verify;
 pub mod welcome;
@@ -523,6 +525,7 @@ macro_rules! delegate {
             IambWindow::UnreadList($id) => $e,
             IambWindow::MentionsList($id) => $e,
             IambWindow::InvitesList($id) => $e,
+            IambWindow::Explorer($id) => $e,
         }
     };
 }
@@ -541,6 +544,7 @@ pub enum IambWindow {
     UnreadList(RoomListState),
     MentionsList(RoomListState),
     InvitesList(RoomListState),
+    Explorer(ExplorerState),
 }
 
 impl IambWindow {
@@ -677,6 +681,12 @@ impl From<VerifyListState> for IambWindow {
 impl From<WelcomeState> for IambWindow {
     fn from(win: WelcomeState) -> Self {
         IambWindow::Welcome(win)
+    }
+}
+
+impl From<ExplorerState> for IambWindow {
+    fn from(win: ExplorerState) -> Self {
+        IambWindow::Explorer(win)
     }
 }
 
@@ -1101,6 +1111,7 @@ impl WindowOps<IambInfo> for IambWindow {
                     .render(area, buf, state);
             },
             IambWindow::Welcome(state) => state.draw(area, buf, focused, store),
+            IambWindow::Explorer(state) => state.draw(area, buf, focused, store),
         }
     }
 
@@ -1123,6 +1134,7 @@ impl WindowOps<IambInfo> for IambWindow {
             IambWindow::UnreadList(w) => Self::UnreadList(w.dup(store)),
             IambWindow::MentionsList(w) => Self::MentionsList(w.dup(store)),
             IambWindow::InvitesList(w) => Self::InvitesList(w.dup(store)),
+            IambWindow::Explorer(w) => w.dup(store).into(),
         }
     }
 
@@ -1168,6 +1180,7 @@ impl Window<IambInfo> for IambWindow {
             IambWindow::UnreadList(_) => IambId::UnreadList,
             IambWindow::MentionsList(_) => IambId::MentionsList,
             IambWindow::InvitesList(_) => IambId::InvitesList,
+            IambWindow::Explorer(_) => IambId::Explorer,
         }
     }
 
@@ -1183,6 +1196,7 @@ impl Window<IambInfo> for IambWindow {
             IambWindow::UnreadList(_) => Line::from("Unread Messages"),
             IambWindow::MentionsList(_) => Line::from("Unread Mentions"),
             IambWindow::InvitesList(_) => Line::from("Open Invites"),
+            IambWindow::Explorer(_) => Line::from("Explorer"),
 
             IambWindow::Room(w) => w.get_tab_title(store),
             IambWindow::MemberList(state, room_id, _) => {
@@ -1223,6 +1237,7 @@ impl Window<IambInfo> for IambWindow {
             IambWindow::UnreadList(_) => Line::styled("Unread Messages", style),
             IambWindow::MentionsList(_) => Line::styled("Unread Mentions", style),
             IambWindow::InvitesList(_) => Line::styled("Open Invites", style),
+            IambWindow::Explorer(_) => Line::styled("Explorer", style),
 
             IambWindow::Room(w) => w.get_title(store),
             IambWindow::MemberList(state, room_id, _) => {
@@ -1348,6 +1363,7 @@ impl Window<IambInfo> for IambWindow {
 
                 Ok(Self::InvitesList(list))
             },
+            IambId::Explorer => Ok(ExplorerState::new(store).into()),
         }
     }
 
