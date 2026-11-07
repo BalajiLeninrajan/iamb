@@ -656,6 +656,85 @@ fn member_active(state: &MembershipState) -> bool {
     matches!(state, MembershipState::Invite | MembershipState::Join)
 }
 
+/// Format a room name from its heroes, the way the spec describes: "Alice, Bob,
+/// and 3 others", where the others are members besides you and the heroes.
+fn name_from_heroes(mut heroes: Vec<String>, others: u64) -> String {
+    heroes.sort_unstable();
+    let names = heroes.join(", ");
+
+    match others {
+        0 => names,
+        1 => format!("{names}, and 1 other"),
+        n => format!("{names}, and {n} others"),
+    }
+}
+
+/// Recount a hero-based room name, which matrix-sdk gets wrong for bridged chats.
+///
+/// matrix-sdk counts you among the "others", and only leaves service members such
+/// as bridge bots out of the count when they're also heroes. Bridges and Beeper
+/// list bots in `io.element.functional_members` but not in the heroes, so every
+/// bridged DM came out as "Bob, and 2 others" instead of "Bob".
+pub async fn fix_calculated_name(room: &MatrixRoom, display: RoomDisplayName) -> RoomDisplayName {
+    let RoomDisplayName::Calculated(_) = display else {
+        return display;
+    };
+
+    let members = room.joined_members_count() + room.invited_members_count();
+    if members == 0 {
+        // No summary from the server, so the SDK counted members itself.
+        return display;
+    }
+
+    let own_user_id = room.own_user_id();
+    let service_members = room.service_members().unwrap_or_default();
+    let mut heroes = vec![];
+
+    for hero in room.heroes().await {
+        if &*hero.user_id == own_user_id || service_members.contains(&hero.user_id) {
+            continue;
+        }
+
+        let name = match hero.display_name {
+            Some(name) => name,
+            None => {
+                match room.get_member_no_sync(&hero.user_id).await {
+                    Ok(Some(member)) => member.name().to_owned(),
+                    _ => hero.user_id.to_string(),
+                }
+            },
+        };
+
+        heroes.push(name);
+    }
+
+    if heroes.is_empty() {
+        return display;
+    }
+
+    let mut active_service_members = 0;
+    for user_id in &service_members {
+        if let Ok(Some(member)) = room.get_member_no_sync(user_id).await &&
+            member_active(member.membership())
+        {
+            active_service_members += 1;
+        }
+    }
+
+    let others = members.saturating_sub(1 + active_service_members + heroes.len() as u64);
+    RoomDisplayName::Calculated(name_from_heroes(heroes, others))
+}
+
+/// Get a room's display name, loading room state if the name isn't cached yet.
+async fn room_display_name(room: &MatrixRoom) -> IambResult<RoomDisplayName> {
+    let display = match room.cached_display_name() {
+        Some(name) => name,
+        None => room.display_name().await.map_err(IambError::from)?,
+    };
+
+    Ok(fix_calculated_name(room, display).await)
+}
+
 fn members_insert(
     room_id: OwnedRoomId,
     res: IambResult<Vec<MemberSummary>>,
@@ -798,6 +877,7 @@ async fn refresh_rooms(client: &Client, store: &AsyncProgramStore, first_sync: b
         } else {
             RoomDisplayName::Empty
         };
+        let display = fix_calculated_name(&room, display).await;
 
         let name = display.to_string();
         let tags = room.tags().await.unwrap_or_default();
@@ -2349,11 +2429,7 @@ impl ClientWorker {
 
     async fn get_room(&mut self, room_id: OwnedRoomId) -> IambResult<FetchedRoom> {
         if let Some(room) = self.client.get_room(&room_id) {
-            let name = if let Some(name) = room.cached_display_name() {
-                name
-            } else {
-                room.display_name().await.map_err(IambError::from)?
-            };
+            let name = room_display_name(&room).await?;
 
             Ok((room, name))
         } else {
@@ -2481,5 +2557,21 @@ impl ClientWorker {
             store.lock().await.application.settings.user_id = user.to_owned();
         }
         Ok(Some(InfoMessage::from(msg)))
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    #[test]
+    fn test_name_from_heroes() {
+        // A bridged DM: the contact is the only hero, and nobody else counts.
+        assert_eq!(name_from_heroes(vec!["Kayla Chang".into()], 0), "Kayla Chang");
+        assert_eq!(
+            name_from_heroes(vec!["Bob".into(), "Alice".into()], 1),
+            "Alice, Bob, and 1 other"
+        );
+        assert_eq!(name_from_heroes(vec!["Bob".into()], 3), "Bob, and 3 others");
     }
 }

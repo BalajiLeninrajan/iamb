@@ -14,6 +14,7 @@ use matrix_sdk::ruma::serde::Raw;
 
 use crate::config::NotifyVia;
 use crate::prelude::*;
+use crate::worker::fix_calculated_name;
 
 const IAMB_XDG_NAME: &str = match option_env!("IAMB_XDG_NAME") {
     None => "iamb",
@@ -252,6 +253,8 @@ pub async fn parse_full_notification(
         .unwrap_or_else(|| sender_id.localpart());
 
     let summary = if let Some(room_name) = room.cached_display_name() {
+        let room_name = fix_calculated_name(&room, room_name).await;
+
         if room.is_direct().await.map_err(IambError::from)? && sender_name == room_name.to_string()
         {
             sender_name.to_string()
