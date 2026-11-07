@@ -217,6 +217,9 @@ bitflags::bitflags! {
 
         /// Open file after downloading.
         const OPEN = 0b00000010;
+
+        /// Open the attachment without offering the message's links instead.
+        const ATTACHMENT = 0b00000100;
     }
 }
 

@@ -637,16 +637,46 @@ fn open_links(msg: &Message) -> UIError<IambInfo> {
         return IambError::NoAttachment.into();
     }
 
-    let choices = links
+    let choices = links.into_iter().map(link_choice).collect();
+    let dialog = MultiChoice::new(choices);
+    UIError::NeedConfirm(Box::new(dialog))
+}
+
+fn link_choice((key, url): (char, Url)) -> MultiChoiceItem<Action<IambInfo>> {
+    let url = url.to_string();
+    let act = IambAction::OpenLink(url.clone()).into();
+    MultiChoiceItem::new(key, url, vec![act])
+}
+
+/// Let the user pick between opening a message's attachment and the links in its caption.
+fn open_attachment_or_links(
+    links: Vec<(char, Url)>,
+    filename: &str,
+    flags: DownloadFlags,
+) -> UIError<IambInfo> {
+    // Links are labelled 0-9, then a-z, so pick a key for the attachment that they don't use.
+    let key = ['a', '.']
         .into_iter()
-        .map(|l| {
-            let url = l.1.to_string();
-            let act = IambAction::OpenLink(url.clone()).into();
-            MultiChoiceItem::new(l.0, url, vec![act])
-        })
+        .find(|c| links.iter().all(|(k, _)| k != c))
+        .unwrap_or('.');
+    let open = MessageAction::Download(None, flags | DownloadFlags::ATTACHMENT);
+    let attachment = MultiChoiceItem::new(key, format!("Attachment: {filename}"), vec![
+        IambAction::from(open).into(),
+    ]);
+
+    let choices = std::iter::once(attachment)
+        .chain(links.into_iter().map(link_choice))
         .collect();
     let dialog = MultiChoice::new(choices);
     UIError::NeedConfirm(Box::new(dialog))
+}
+
+/// Where `:open` puts attachments when no path is given. They only need to exist long enough to
+/// be viewed, so they go in a temporary directory instead of the downloads directory.
+fn open_dir() -> IambResult<PathBuf> {
+    let dir = std::env::temp_dir().join("iamb");
+    fs::create_dir_all(&dir)?;
+    Ok(dir)
 }
 
 pub async fn msg_download(
@@ -686,11 +716,6 @@ pub async fn msg_download(
         }
 
         let media = client.media();
-        let mut filename = match (filename, &settings.dirs.downloads) {
-            (Some(f), _) => f,
-            (None, Some(downloads)) => downloads.clone(),
-            (None, None) => return Err(IambError::NoDownloadDir.into()),
-        };
         let (source, msg_filename) = match msgtype {
             MessageType::Audio(c) => (c.source.clone(), c.filename()),
             MessageType::File(c) => (c.source.clone(), c.filename()),
@@ -703,6 +728,20 @@ pub async fn msg_download(
                 let err = open_links(msg);
                 return Err(err);
             },
+        };
+        let opening = flags.contains(DownloadFlags::OPEN);
+        if opening && filename.is_none() && !flags.contains(DownloadFlags::ATTACHMENT) {
+            let links = msg.find_links();
+
+            if !links.is_empty() {
+                return Err(open_attachment_or_links(links, msg_filename, flags));
+            }
+        }
+        let mut filename = match (filename, &settings.dirs.downloads) {
+            (Some(f), _) => f,
+            (None, _) if opening => open_dir()?,
+            (None, Some(downloads)) => downloads.clone(),
+            (None, None) => return Err(IambError::NoDownloadDir.into()),
         };
         if filename.is_dir() {
             filename.push(msg_filename.replace(std::path::MAIN_SEPARATOR_STR, "_"));
