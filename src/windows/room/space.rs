@@ -321,6 +321,7 @@ mod tests {
             tags: vec![],
             unread: Default::default(),
             membership: MatrixRoomState::Invited,
+            network: None,
             room_type: RoomType::Room,
         };
         let room2 = TestRoomItem {
@@ -330,6 +331,7 @@ mod tests {
             tags: vec![],
             unread: Default::default(),
             membership: MatrixRoomState::Invited,
+            network: None,
             room_type: RoomType::Room,
         };
         let room3 = TestRoomItem {
@@ -339,6 +341,7 @@ mod tests {
             tags: vec![],
             unread: Default::default(),
             membership: MatrixRoomState::Invited,
+            network: None,
             room_type: RoomType::Room,
         };
         let room4 = TestRoomItem {
@@ -348,6 +351,7 @@ mod tests {
             tags: vec![],
             unread: Default::default(),
             membership: MatrixRoomState::Invited,
+            network: None,
             room_type: RoomType::Room,
         };
 

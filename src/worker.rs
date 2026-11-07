@@ -3,6 +3,7 @@
 //! The worker thread handles asynchronous work, and can receive messages from the main thread that
 //! block on a reply from the async worker.
 
+use std::collections::BTreeSet;
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 
@@ -91,6 +92,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{Instrument as _, error, warn};
 
 use crate::base::{CreateRoomFlags, CreateRoomType, EchoLocation, MessageNeed};
+use crate::bridge::{is_service_member_event, room_network};
 use crate::config::ProxyUrl;
 use crate::notifications::register_notifications;
 use crate::oauth::oauth_login;
@@ -478,12 +480,33 @@ async fn load_older_one(room: &MatrixRoom) -> MessageFetchResult {
     Ok((outcome.reached_start, msgs))
 }
 
+/// Get the service members (like bridge bots) listed in a room's `io.element.functional_members`.
+fn room_service_members(room: Option<&MatrixRoom>) -> BTreeSet<OwnedUserId> {
+    room.and_then(|room| room.service_members()).unwrap_or_default()
+}
+
+/// Whether to put a state event into the room's timeline, according to `state_event_display`
+/// and `service_member_display`.
+fn show_state_event(
+    sender: &UserId,
+    state_key: &str,
+    service_members: &BTreeSet<OwnedUserId>,
+    settings: &ApplicationSettings,
+) -> bool {
+    let tunables = &settings.tunables;
+
+    tunables.state_event_display &&
+        (tunables.service_member_display ||
+            !is_service_member_event(sender, state_key, service_members))
+}
+
 fn insert_msgs_and_receipts(
     msgs: Vec<MessageAndReceipts>,
     info: &mut RoomInfo,
     presences: &mut CompletionMap<OwnedUserId, PresenceState>,
     previews: &mut PreviewManager,
     settings: &ApplicationSettings,
+    service_members: &BTreeSet<OwnedUserId>,
 ) {
     for (msg, thread, receipts) in msgs {
         let sender = msg.sender().to_owned();
@@ -544,7 +567,7 @@ fn insert_msgs_and_receipts(
                 continue;
             },
             AnyTimelineEvent::State(msg) => {
-                if settings.tunables.state_event_display {
+                if show_state_event(msg.sender(), msg.state_key(), service_members, settings) {
                     info.insert_any_state(msg.into());
                 }
             },
@@ -558,13 +581,15 @@ fn load_insert(
     locked: &mut ProgramStore,
     message_needs: Vec<MessageNeed>,
 ) {
-    let ChatStore { presences, rooms, previews, settings, .. } = &mut locked.application;
+    let ChatStore { presences, rooms, previews, settings, worker, .. } = &mut locked.application;
+    let service_members = room_service_members(worker.client.get_room(&room_id).as_ref());
     let info = rooms.get_or_default(room_id.clone());
     info.fetching = false;
 
     match res {
         Ok((reached_start, msgs)) => {
-            insert_msgs_and_receipts(msgs, info, presences, previews, settings);
+            let sm = &service_members;
+            insert_msgs_and_receipts(msgs, info, presences, previews, settings, sm);
 
             info.reached_timeline_start = reached_start;
 
@@ -762,11 +787,13 @@ async fn load_initial_messages(client: Client, store: AsyncProgramStore) {
         }
 
         let msgs = get_receipts_for_timeline_events(room, events).await;
+        let service_members = room_service_members(Some(room));
 
         let mut locked = store.lock().await;
         let ChatStore { presences, rooms, previews, settings, .. } = &mut locked.application;
         let info = rooms.get_or_default(room.room_id().to_owned());
-        insert_msgs_and_receipts(msgs, info, presences, previews, settings);
+        let sm = &service_members;
+        insert_msgs_and_receipts(msgs, info, presences, previews, settings, sm);
     }
 
     // This is an arbitrary limit on how much work we do in parallel to avoid
@@ -791,12 +818,14 @@ async fn load_initial_messages(client: Client, store: AsyncProgramStore) {
                     },
                 };
 
+                let service_members = room_service_members(Some(room));
                 let mut locked = store.lock().await;
                 let ChatStore { presences, rooms, previews, settings, .. } =
                     &mut locked.application;
                 let info = rooms.get_or_default(room.room_id().to_owned());
                 info.reached_timeline_start = reached_start;
-                insert_msgs_and_receipts(msgs, info, presences, previews, settings);
+                let sm = &service_members;
+                insert_msgs_and_receipts(msgs, info, presences, previews, settings, sm);
                 drop(permit);
             }
         })
@@ -825,6 +854,7 @@ async fn load_older_forever(client: &Client, store: &AsyncProgramStore) {
 }
 
 async fn refresh_rooms(client: &Client, store: &AsyncProgramStore, first_sync: bool) {
+    let mut networks = vec![];
     let mut pinned = vec![];
     let mut names_and_tags = vec![];
 
@@ -863,6 +893,7 @@ async fn refresh_rooms(client: &Client, store: &AsyncProgramStore, first_sync: b
         }
 
         pinned.push((room.room_id().to_owned(), room.pinned_event_ids().unwrap_or_default()));
+        networks.push((room.room_id().to_owned(), room_network(&room).await));
         names_and_tags.push((room.clone(), name, tags, aliases, flags));
 
         if room.is_direct().await.unwrap_or_default() {
@@ -907,6 +938,10 @@ async fn refresh_rooms(client: &Client, store: &AsyncProgramStore, first_sync: b
 
     for (room_id, pinned_events) in pinned {
         locked.application.get_room_info(room_id).pinned_events = pinned_events;
+    }
+
+    for (room_id, network) in networks {
+        locked.application.get_room_info(room_id).network = network;
     }
 }
 
@@ -2107,7 +2142,18 @@ impl ClientWorker {
                 |ev: AnySyncStateEvent, room: MatrixRoom, store: Ctx<AsyncProgramStore>| {
                     async move {
                         let room_id = room.room_id();
+                        let service_members = room_service_members(Some(&room));
                         let mut locked = store.lock().await;
+                        let settings = &locked.application.settings;
+
+                        if !show_state_event(
+                            ev.sender(),
+                            ev.state_key(),
+                            &service_members,
+                            settings,
+                        ) {
+                            return;
+                        }
 
                         let info = locked.application.get_room_info(room_id.to_owned());
                         info.insert_any_state(ev);

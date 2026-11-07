@@ -268,6 +268,11 @@ pub enum SortFieldRoom {
 
     /// Sort rooms by whether the user has joined them.
     Joined,
+
+    /// Sort rooms by the chat network they are bridged to, like WhatsApp or Signal.
+    ///
+    /// Rooms that aren't bridged sort after bridged ones.
+    Network,
 }
 
 /// Fields that space children can be sorted by.
@@ -348,6 +353,7 @@ impl Visitor<'_> for SortRoomVisitor {
             "space" => SortFieldRoom::Space,
             "invite" => SortFieldRoom::Invite,
             "joined" => SortFieldRoom::Joined,
+            "network" => SortFieldRoom::Network,
             _ => {
                 let msg = format!("Unknown sort field: {value:?}");
                 return Err(E::custom(msg));
@@ -1396,6 +1402,10 @@ pub struct RoomInfo {
     /// The tags placed on this room.
     pub tags: Option<Tags>,
 
+    /// The name of the chat network this room is bridged to, like "WhatsApp", taken from the
+    /// room's `m.bridge` state.
+    pub network: Option<String>,
+
     pub flags: RoomInfoFlags,
 
     /// A map of event IDs to where they are stored in this struct.
@@ -1465,6 +1475,7 @@ impl Default for RoomInfo {
 
             name: Default::default(),
             tags: Default::default(),
+            network: Default::default(),
             keys: Default::default(),
             flags: Default::default(),
             echo_keys: Default::default(),
