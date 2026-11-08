@@ -129,7 +129,10 @@ View more information about the focused message.
 Download an attachment from the selected message and save it to the optional path.
 .It Sy ":open [path]"
 Download and then open an attachment, or open a link in a message.
-Without a path, attachments go to a temporary directory instead of the downloads directory, since they only need to be around long enough to look at.
+Without a path, attachments go to
+.Pa open
+in the cache directory instead of the downloads directory, since they only need to be around long enough to look at.
+Files there are deleted a day after they were downloaded.
 When an attachment's caption has links, choose between opening the attachment and opening one of the links.
 .It Sy ":edit"
 Edit the selected message.
