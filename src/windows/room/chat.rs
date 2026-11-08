@@ -3,6 +3,7 @@ use std::convert::TryInto;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::process::Command;
+use std::time::SystemTime;
 
 use edit::Builder;
 use edit::edit_with_builder as external_edit;
@@ -671,12 +672,40 @@ fn open_attachment_or_links(
     UIError::NeedConfirm(Box::new(dialog))
 }
 
-/// Where `:open` puts attachments when no path is given. They only need to exist long enough to
-/// be viewed, so they go in a temporary directory instead of the downloads directory.
-fn open_dir() -> IambResult<PathBuf> {
-    let dir = std::env::temp_dir().join("iamb");
+/// How long a file opened with `:open` is kept before a later `:open` deletes it.
+const OPENED_FILE_LIFETIME: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// Where `:open` puts attachments when no path is given.
+///
+/// They only need to exist long enough to be viewed, so they go in the cache directory instead of
+/// the downloads directory. That's on disk rather than in `/tmp`, which is often a RAM-backed
+/// tmpfs where a large video would hold memory until reboot. Files older than
+/// [OPENED_FILE_LIFETIME] are deleted each time, so the directory doesn't grow without bound.
+fn open_dir(settings: &ApplicationSettings) -> IambResult<PathBuf> {
+    let dir = settings.dirs.cache.join("open");
     fs::create_dir_all(&dir)?;
+    prune_opened_files(&dir, SystemTime::now());
     Ok(dir)
+}
+
+fn prune_opened_files(dir: &Path, now: SystemTime) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let expired = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age > OPENED_FILE_LIFETIME);
+
+        if expired {
+            // Best effort: a file that can't be removed now gets another try next time.
+            let _ = fs::remove_file(entry.path());
+        }
+    }
 }
 
 pub async fn msg_download(
@@ -739,7 +768,7 @@ pub async fn msg_download(
         }
         let mut filename = match (filename, &settings.dirs.downloads) {
             (Some(f), _) => f,
-            (None, _) if opening => open_dir()?,
+            (None, _) if opening => open_dir(settings)?,
             (None, Some(downloads)) => downloads.clone(),
             (None, None) => return Err(IambError::NoDownloadDir.into()),
         };
@@ -1594,6 +1623,30 @@ pub fn auto_toggle_focus(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_prune_opened_files() {
+        let dir = std::env::temp_dir().join(format!("iamb-prune-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let old = dir.join("old.jpg");
+        let new = dir.join("new.jpg");
+        fs::write(&old, b"old").unwrap();
+        fs::write(&new, b"new").unwrap();
+
+        let modified = SystemTime::now() - OPENED_FILE_LIFETIME - Duration::from_secs(60);
+        fs::File::options()
+            .write(true)
+            .open(&old)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+
+        prune_opened_files(&dir, SystemTime::now());
+        assert!(!old.exists());
+        assert!(new.exists());
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     use modalkit::actions::{EditAction, InsertTextAction};
 
