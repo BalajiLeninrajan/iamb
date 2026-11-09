@@ -2637,6 +2637,9 @@ pub struct ChatStore {
 
     /// Notifications that should be dismissed when the user opens the room.
     pub open_notifications: HashMap<OwnedRoomId, Vec<NotificationHandle>>,
+
+    /// A room to switch to on the next step of the main loop, set by clicking a notification.
+    pub open_room_request: Option<OwnedRoomId>,
 }
 
 impl ChatStore {
@@ -2667,6 +2670,7 @@ impl ChatStore {
             draw_error: None,
             focused: true,
             open_notifications: Default::default(),
+            open_room_request: None,
         };
 
         Ok(store)
