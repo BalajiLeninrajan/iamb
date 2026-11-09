@@ -22,19 +22,13 @@ const IAMB_XDG_NAME: &str = match option_env!("IAMB_XDG_NAME") {
 };
 
 /// Handle for an open notification that should be closed when the user views it.
+///
+/// Dropping it tells the task watching the notification to close it.
 pub struct NotificationHandle(
     #[cfg(all(feature = "desktop", unix, not(target_os = "macos")))]
-    Option<notify_rust::NotificationHandle>,
+    #[allow(dead_code)]
+    tokio::sync::oneshot::Sender<()>,
 );
-
-impl Drop for NotificationHandle {
-    fn drop(&mut self) {
-        #[cfg(all(feature = "desktop", unix, not(target_os = "macos")))]
-        if let Some(handle) = self.0.take() {
-            handle.close();
-        }
-    }
-}
 
 pub async fn register_notifications(
     client: &Client,
@@ -47,6 +41,13 @@ pub async fn register_notifications(
     let notify_via = settings.tunables.notifications.via;
     let show_message = settings.tunables.notifications.show_message;
     let sound_hint = settings.tunables.notifications.sound_hint.clone();
+    // The terminal title iamb sets, used to find and focus its window when a notification is
+    // clicked.
+    let window_title = settings
+        .tunables
+        .terminal
+        .enable_title
+        .then(|| format!("iamb ({})", settings.user_id.as_str()));
     let server_settings = client.notification_settings().await;
     let Some(startup_ts) = MilliSecondsSinceUnixEpoch::from_system_time(SystemTime::now()) else {
         return;
@@ -58,6 +59,7 @@ pub async fn register_notifications(
             let store = store.clone();
             let server_settings = server_settings.clone();
             let sound_hint = sound_hint.clone();
+            let window_title = window_title.clone();
             async move {
                 let mode = global_or_room_mode(&server_settings, &room).await;
                 if mode == RoomNotificationMode::Mute {
@@ -92,6 +94,7 @@ pub async fn register_notifications(
                                     room_id,
                                     &store,
                                     sound_hint.as_deref(),
+                                    window_title,
                                 )
                                 .await;
                             },
@@ -117,14 +120,15 @@ async fn send_notification(
     room_id: OwnedRoomId,
     store: &AsyncProgramStore,
     sound_hint: Option<&str>,
+    window_title: Option<String>,
 ) {
     #[cfg(feature = "desktop")]
     if via.desktop {
-        send_notification_desktop(summary, body, room_id, store, sound_hint).await;
+        send_notification_desktop(summary, body, room_id, store, sound_hint, window_title).await;
     }
     #[cfg(not(feature = "desktop"))]
     {
-        let _ = (summary, body, IAMB_XDG_NAME);
+        let _ = (summary, body, room_id, window_title, IAMB_XDG_NAME);
     }
 
     if via.bell {
@@ -145,13 +149,14 @@ async fn send_notification_desktop(
     room_id: OwnedRoomId,
     _store: &AsyncProgramStore,
     sound_hint: Option<&str>,
+    window_title: Option<String>,
 ) {
     let mut desktop_notification = notify_rust::Notification::new();
     desktop_notification
         .summary(summary)
         .appname(IAMB_XDG_NAME)
         .icon(IAMB_XDG_NAME)
-        .action("default", "default");
+        .action("default", "Open");
 
     if let Some(sound_hint) = sound_hint {
         desktop_notification.sound_name(sound_hint);
@@ -171,15 +176,106 @@ async fn send_notification_desktop(
         Err(err) => tracing::error!("Failed to send notification: {err}"),
         Ok(handle) => {
             #[cfg(all(unix, not(target_os = "macos")))]
-            _store
-                .lock()
-                .await
-                .application
-                .open_notifications
-                .entry(room_id)
-                .or_default()
-                .push(NotificationHandle(Some(handle)));
+            {
+                let (close_tx, close_rx) = tokio::sync::oneshot::channel();
+                tokio::spawn(watch_notification(
+                    handle,
+                    room_id.clone(),
+                    _store.clone(),
+                    window_title,
+                    close_rx,
+                ));
+                _store
+                    .lock()
+                    .await
+                    .application
+                    .open_notifications
+                    .entry(room_id)
+                    .or_default()
+                    .push(NotificationHandle(close_tx));
+            }
+            #[cfg(any(not(unix), target_os = "macos"))]
+            let _ = (handle, room_id, window_title);
         },
+    }
+}
+
+/// Wait for the user to click the notification, or for iamb to drop its [NotificationHandle].
+///
+/// A click asks the main loop to open the room and focuses iamb's terminal window. A dropped
+/// handle closes the notification.
+#[cfg(all(feature = "desktop", unix, not(target_os = "macos")))]
+async fn watch_notification(
+    handle: notify_rust::NotificationHandle,
+    room_id: OwnedRoomId,
+    store: AsyncProgramStore,
+    window_title: Option<String>,
+    close: tokio::sync::oneshot::Receiver<()>,
+) {
+    use notify_rust::NotificationResponse;
+
+    let clicked = async {
+        let mut clicked = false;
+        handle
+            .wait_for_action_async(|response| {
+                clicked = match response {
+                    NotificationResponse::Default => true,
+                    NotificationResponse::Action(action) => action == "default",
+                    _ => false,
+                };
+            })
+            .await;
+        clicked
+    };
+
+    tokio::select! {
+        clicked = clicked => {
+            if !clicked {
+                return;
+            }
+
+            store.lock().await.application.open_room_request = Some(room_id);
+
+            if let Some(title) = window_title {
+                let _ = tokio::task::spawn_blocking(move || focus_window(&title)).await;
+            }
+        },
+        // Fires when the sender is dropped, which is how iamb closes notifications.
+        _ = close => handle.close_async().await,
+    }
+}
+
+/// Focus the terminal window whose title is `title`.
+///
+/// Only niri is supported, by matching the title in `niri msg windows`.
+#[cfg(all(feature = "desktop", unix, not(target_os = "macos")))]
+fn focus_window(title: &str) {
+    use std::process::Command;
+
+    if std::env::var_os("NIRI_SOCKET").is_none() {
+        return;
+    }
+
+    let Ok(output) = Command::new("niri").args(["msg", "--json", "windows"]).output() else {
+        return;
+    };
+    let Ok(windows) = serde_json::from_slice::<Vec<serde_json::Value>>(&output.stdout) else {
+        return;
+    };
+    let Some(id) = windows
+        .iter()
+        .find(|w| w["title"].as_str() == Some(title))
+        .and_then(|w| w["id"].as_u64())
+    else {
+        tracing::warn!("No niri window titled {title:?} to focus");
+        return;
+    };
+
+    let res = Command::new("niri")
+        .args(["msg", "action", "focus-window", "--id", &id.to_string()])
+        .status();
+    if let Err(err) = res {
+        tracing::error!("Failed to focus niri window {id}: {err}");
     }
 }
 

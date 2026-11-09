@@ -375,8 +375,33 @@ impl Application {
         Ok(())
     }
 
+    /// Switch to the room from a clicked notification, if there is one.
+    async fn open_requested_room(&mut self) {
+        let mut store = self.store.lock().await;
+        let Some(room_id) = store.application.open_room_request.take() else {
+            return;
+        };
+
+        let target = OpenTarget::Application(IambId::Room(room_id.into(), RoomView::Main));
+        let act = WindowAction::Switch(target, OpenFlags::NONE);
+        let ctx = ProgramContext::default();
+
+        match self.screen.window_command(&act, &ctx, store.deref_mut()) {
+            Ok(None) => {},
+            Ok(Some(info)) => {
+                drop(store);
+                self.handle_info(info);
+            },
+            Err(e) => {
+                drop(store);
+                self.handle_error(e);
+            },
+        }
+    }
+
     async fn step(&mut self) -> Result<TerminalKey, std::io::Error> {
         loop {
+            self.open_requested_room().await;
             self.redraw(self.dirty, self.store.clone().lock().await.deref_mut())?;
             self.dirty = false;
 
