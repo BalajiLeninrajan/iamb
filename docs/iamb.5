@@ -302,7 +302,7 @@ Defines the maximum time per request in seconds.
 .It Sy room_labels
 Defines which kinds of labels to put next to room names and what order to show the information in.
 This defaults to
-.Sy ["unread",\ "membership",\ "tags",\ "muted",\ "type"] .
+.Sy ["unread",\ "membership",\ "tags",\ "muted",\ "type",\ "space"] .
 The possible values and the information shown are:
 .Bl -tag -width Ds
 .It Sy membership
@@ -321,6 +321,9 @@ using the room's
 or
 .Sy uk.half-shot.bridge
 state.
+.It Sy space
+Show the name of each joined space that lists the room as a child.
+The window for a space leaves that space out.
 .It Sy tags
 Show if the room has been tagged, such as a Favorite or Low Priority room.
 .It Sy type
