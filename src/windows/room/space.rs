@@ -217,6 +217,7 @@ impl StatefulWidget for Space<'_> {
                         &worker.client,
                         spaces,
                     )
+                    .hide_parent(&state.room_id)
                 } else if let Some((preview, fetched)) = room_previews.get(id.as_str()) {
                     if fetched.elapsed() > ROOM_PREVIEW_DEBOUNCE {
                         need_load.need_preview(id.to_owned().into());

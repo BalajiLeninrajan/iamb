@@ -84,12 +84,13 @@ const DEFAULT_SPACE_SORT: [SortColumn<SortFieldSpace>; 3] = [
     SortColumn(SortFieldSpace::SpaceOrder, SortOrder::Ascending),
 ];
 
-const DEFAULT_ROOM_LABELS: [RoomLabel; 5] = [
+const DEFAULT_ROOM_LABELS: [RoomLabel; 6] = [
     RoomLabel::Unread,
     RoomLabel::Membership,
     RoomLabel::Tags,
     RoomLabel::Muted,
     RoomLabel::Type,
+    RoomLabel::Space,
 ];
 
 const DEFAULT_ENABLE_TITLE: bool = true;
@@ -738,6 +739,7 @@ pub enum RoomLabel {
     Membership,
     Muted,
     Network,
+    Space,
     Tags,
     Type,
     Unread,
@@ -2535,6 +2537,7 @@ time_format = "%"
         assert_eq!(RoomLabel::Tags, serde_json::from_str(r#""tags""#).unwrap());
         assert_eq!(RoomLabel::Type, serde_json::from_str(r#""type""#).unwrap());
         assert_eq!(RoomLabel::Network, serde_json::from_str(r#""network""#).unwrap());
+        assert_eq!(RoomLabel::Space, serde_json::from_str(r#""space""#).unwrap());
     }
 
     #[test]

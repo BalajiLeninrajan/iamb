@@ -1431,6 +1431,9 @@ pub struct GenericRoomItem {
     room_type_show: bool,
     room_type: RoomType,
     network: Option<String>,
+
+    /// The joined spaces that list this room as a child, sorted by name.
+    parents: Vec<(OwnedRoomId, String)>,
 }
 
 impl GenericRoomItem {
@@ -1448,6 +1451,16 @@ impl GenericRoomItem {
         let room_flags = info.flags;
         let tags = info.tags.clone();
         let network = info.network.clone();
+
+        let mut parents = spaces
+            .iter()
+            .filter(|(_, space)| space.children.contains_key(&room_id))
+            .filter_map(|(id, _)| {
+                let name = client.get_room(id)?.cached_display_name()?.to_string();
+                Some((id.clone(), name))
+            })
+            .collect::<Vec<_>>();
+        parents.sort_by(|a, b| a.1.cmp(&b.1));
 
         if room.is_space() &&
             let Some(space_info) = spaces.get(&room_id)
@@ -1479,6 +1492,7 @@ impl GenericRoomItem {
             room_type_show: true,
             section: None,
             network,
+            parents,
         }
     }
 
@@ -1507,7 +1521,14 @@ impl GenericRoomItem {
             room_type_show: true,
             section: None,
             network: None,
+            parents: vec![],
         }
+    }
+
+    /// Leave a space out of the labels, for a list that only shows that space's rooms.
+    pub fn hide_parent(mut self, space: &RoomId) -> Self {
+        self.parents.retain(|(id, _)| id.as_str() != space.as_str());
+        self
     }
 
     fn show_room_type(mut self, show: bool) -> Self {
@@ -1569,6 +1590,11 @@ impl GenericRoomItem {
                 RoomLabel::Network => {
                     if let Some(network) = &self.network {
                         labels.push(vec![Span::styled(network.as_str(), tags_style)]);
+                    }
+                },
+                RoomLabel::Space => {
+                    for (_, name) in &self.parents {
+                        labels.push(vec![Span::styled(name.as_str(), tags_style)]);
                     }
                 },
                 RoomLabel::Tags => {
@@ -1933,7 +1959,7 @@ impl Promptable<ProgramContext, ProgramStore, IambInfo> for PinnedItem {
 mod tests {
     use super::*;
 
-    use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, room_alias_id, server_name};
+    use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, owned_room_id, room_alias_id, server_name};
 
     use crate::tests::{TEST_ROOM1_ID, TEST_USER1, TEST_USER2};
 
@@ -1999,6 +2025,46 @@ mod tests {
         creator.member.power_level = UserPowerLevel::Infinite;
         creator.set_section(&fields);
         assert_eq!(creator.get_section(), Some(&ListSectionHeader::Admins));
+    }
+
+    #[test]
+    fn test_room_label_space() {
+        let friends = owned_room_id!("!friends:example.com");
+        let work = owned_room_id!("!work:example.com");
+
+        let item = GenericRoomItem {
+            room_id: TEST_ROOM1_ID.clone(),
+            name: "Room".into(),
+            alias: None,
+            tags: None,
+            section: None,
+            membership: MatrixRoomState::Joined,
+            room_flags: RoomInfoFlags::NONE,
+            unread: UnreadInfo::default(),
+            room_type_show: true,
+            room_type: RoomType::Room,
+            network: None,
+            parents: vec![(friends.clone(), "Friends".into()), (work, "Work".into())],
+        };
+        let style = Style::default();
+
+        // A room gets one label per space it's in:
+        let (_, labels) = item.name_and_labels(style, style, &[RoomLabel::Space]);
+        let labels = labels
+            .into_iter()
+            .flatten()
+            .map(|span| span.content.into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(labels, vec!["Friends".to_string(), "Work".to_string()]);
+
+        // Nothing shows up unless the label is asked for:
+        let (_, labels) = item.name_and_labels(style, style, &[RoomLabel::Network]);
+        assert!(labels.is_empty());
+
+        // A space's own window leaves that space out:
+        let item = item.hide_parent(&friends);
+        let (_, labels) = item.name_and_labels(style, style, &[RoomLabel::Space]);
+        assert_eq!(labels, vec![vec![Span::styled("Work", style)]]);
     }
 
     #[derive(Debug, Eq, PartialEq)]
