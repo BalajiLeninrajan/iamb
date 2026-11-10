@@ -46,6 +46,7 @@ use modalkit_ratatui::windows::{WindowLayoutDescription, WindowLayoutState};
 use modalkit_ratatui::{TerminalExtOps, Window};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::widgets::{Block, Clear, Padding};
 use tokio::sync::Mutex as AsyncMutex;
 use tracing::Level;
 use tracing::level_filters::LevelFilter;
@@ -54,6 +55,7 @@ use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use crate::base::{HomeserverAction, KeysAction};
 use crate::completions::IambCompleter;
 use crate::config::{CursorShape, Iamb};
+use crate::keybindings::{HintedBindings, SharedPendingKeys};
 use crate::prelude::*;
 use crate::util::{restore_tty, setup_tty};
 use crate::windows::IambWindow;
@@ -245,6 +247,9 @@ struct Application {
     /// Mapped keybindings.
     bindings: KeyManager<TerminalKey, ProgramAction, RepeatType>,
 
+    /// The keys that can finish the macro the user is typing, shown as a menu.
+    pending_keys: SharedPendingKeys,
+
     /// Pending actions to run.
     actstack: VecDeque<(ProgramAction, ProgramContext)>,
 
@@ -270,6 +275,7 @@ impl Application {
 
         let mut bindings = crate::keybindings::setup_keybindings(&settings.tunables);
         settings.setup(&mut bindings);
+        let (bindings, pending_keys) = HintedBindings::new(bindings, &settings.macros);
         let bindings = KeyManager::new(bindings);
 
         let mut locked = store.lock().await;
@@ -287,6 +293,7 @@ impl Application {
             terminal,
             theme,
             bindings,
+            pending_keys,
             actstack,
             screen,
             focused: true,
@@ -314,6 +321,7 @@ impl Application {
         }
 
         let theme = store.application.settings.theme.clone();
+        let pending = self.pending_keys.lock().map(|p| p.clone()).unwrap_or_default();
 
         term.draw(|f| {
             let area = f.area();
@@ -346,6 +354,31 @@ impl Application {
 
             if hide_cursor {
                 return;
+            }
+
+            if !pending.hints.is_empty() {
+                let lines = pending.lines();
+                let title = format!(" {} ", pending.typed);
+                let inner = lines.iter().map(Line::width).max().unwrap_or(0);
+                let width = inner.max(title.chars().count()).saturating_add(4);
+                let height = lines.len().saturating_add(2);
+
+                // Sit in the bottom right corner, above the command bar.
+                let avail = Rect::new(area.x, area.y, area.width, area.height.saturating_sub(1));
+                let width = width.min(avail.width as usize) as u16;
+                let height = height.min(avail.height as usize) as u16;
+                let popup =
+                    Rect::new(avail.right() - width, avail.bottom() - height, width, height);
+
+                let block = Block::bordered()
+                    .title(title)
+                    .padding(Padding::horizontal(1))
+                    .border_style(theme.windows.border_focused)
+                    .border_type(theme.windows.border_focused_line)
+                    .style(theme.default);
+
+                f.render_widget(Clear, popup);
+                f.render_widget(Paragraph::new(lines).block(block), popup);
             }
 
             if let Some((cx, cy)) = sstate.get_term_cursor() {
