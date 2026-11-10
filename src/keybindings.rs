@@ -64,6 +64,13 @@ pub fn setup_keybindings(tunables: &TunableValues) -> Keybindings {
     ism.add_mapping(VimMode::Insert, &cwm, &newline);
     ism.add_mapping(VimMode::Insert, &shift_enter, &newline);
 
+    // Vim binds <Space> to the same motion as "l", and a key that already has an action runs it
+    // at once instead of waiting for more input. Drop the motion so macros can start with <Space>.
+    let space = vec![once(&"<Space>".parse::<TerminalKey>().unwrap())];
+    let wait = IambStep::new();
+    ism.add_mapping(VimMode::Normal, &space, &wait);
+    ism.add_mapping(VimMode::Visual, &space, &wait);
+
     ism
 }
 
@@ -80,5 +87,30 @@ impl InputBindings<TerminalKey, IambStep> for ApplicationSettings {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::mock_tunables;
+    use modalkit::keybindings::BindingMachine;
+
+    #[test]
+    fn test_space_prefixes_a_mapping() {
+        let mut ism = setup_keybindings(&mock_tunables());
+        let space = "<Space>".parse::<TerminalKey>().unwrap();
+        let key_s = "s".parse::<TerminalKey>().unwrap();
+        let keys = vec![once(&space), once(&key_s)];
+        let step = IambStep::new().actions(vec![WindowAction::ZoomToggle.into()]);
+        ism.add_mapping(VimMode::Normal, &keys, &step);
+
+        // <Space> alone waits for the next key instead of moving the cursor.
+        ism.input_key(space);
+        assert!(ism.pop().is_none());
+
+        ism.input_key(key_s);
+        let (act, _) = ism.pop().unwrap();
+        assert_eq!(act, WindowAction::ZoomToggle.into());
     }
 }
