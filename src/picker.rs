@@ -68,6 +68,10 @@ fn styled_run(run: String, style: Style, hit: bool, accent: Style) -> Span<'stat
 }
 
 /// What a key did to a [Picker].
+///
+/// One of these exists per keypress and is matched on right away, so the size of the largest
+/// variant costs nothing worth boxing it for.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Eq, PartialEq)]
 pub enum PickerEvent {
     /// The picker stays open.
