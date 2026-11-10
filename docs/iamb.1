@@ -75,6 +75,18 @@ Mark all rooms as read.
 View a list of rooms with mentions of the current user.
 .It Sy ":invites"
 View a list of rooms you are invited to.
+.It Sy ":pick [chats|dms|rooms|spaces]"
+Open a room chosen from a list that narrows as you type.
+The query uses fzf's syntax, so its letters only need to appear in order, and words separated by spaces must all match.
+When no arguments are given, list the rooms of the focused window if it is a list of rooms or a space, and every room and direct message otherwise.
+Move with
+.Sy <C-N>
+and
+.Sy <C-P>
+or the arrow keys, pick with
+.Sy <Enter> ,
+and cancel with
+.Sy <Esc> .
 .It Sy ":theme [name]"
 Change the current theme.
 .It Sy ":welcome"
@@ -142,6 +154,7 @@ Open an external
 to compose a message.
 .It Sy ":react [shortcode]"
 React to the selected message with an Emoji.
+When no arguments are given, pick the Emoji from a list that narrows as you type.
 .It Sy ":unreact [shortcode]"
 Remove your reaction from the selected message.
 When no arguments are given, remove all of your reactions from the message.

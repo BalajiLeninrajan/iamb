@@ -714,6 +714,36 @@ pub enum KeysAction {
     Import(String, String),
 }
 
+/// The rooms that a fuzzy picker lists.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PickRooms {
+    /// Every joined room and direct message.
+    Chats,
+
+    /// Every direct message.
+    Dms,
+
+    /// Every joined room.
+    Rooms,
+
+    /// Every joined space.
+    Spaces,
+
+    /// The rooms in one space.
+    Space(OwnedRoomId),
+}
+
+/// What a fuzzy picker lists.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PickerKind {
+    /// Emoji to react to the selected message with.
+    Reactions,
+
+    /// Rooms to open. [None] means the rooms of the list in the focused window, or every chat
+    /// when that window shows something else.
+    Rooms(Option<PickRooms>),
+}
+
 /// An action that the main program loop should execute.
 ///
 /// See [the commands module][super::commands] for where these are usually created.
@@ -763,6 +793,9 @@ pub enum IambAction {
 
     /// Clear all unread messages.
     ClearUnreads,
+
+    /// Open a fuzzy picker.
+    Pick(PickerKind),
 }
 
 impl IambAction {
@@ -819,6 +852,7 @@ impl ApplicationAction for IambAction {
         match self {
             IambAction::ChangeTheme(..) => SequenceStatus::Break,
             IambAction::ClearUnreads => SequenceStatus::Break,
+            IambAction::Pick(..) => SequenceStatus::Break,
             IambAction::Homeserver(..) => SequenceStatus::Break,
             IambAction::Keys(..) => SequenceStatus::Break,
             IambAction::Message(..) => SequenceStatus::Break,
@@ -839,6 +873,7 @@ impl ApplicationAction for IambAction {
         match self {
             IambAction::ChangeTheme(..) => SequenceStatus::Atom,
             IambAction::ClearUnreads => SequenceStatus::Atom,
+            IambAction::Pick(..) => SequenceStatus::Atom,
             IambAction::Homeserver(..) => SequenceStatus::Atom,
             IambAction::Keys(..) => SequenceStatus::Atom,
             IambAction::Message(..) => SequenceStatus::Atom,
@@ -859,6 +894,7 @@ impl ApplicationAction for IambAction {
         match self {
             IambAction::ChangeTheme(..) => SequenceStatus::Ignore,
             IambAction::ClearUnreads => SequenceStatus::Ignore,
+            IambAction::Pick(..) => SequenceStatus::Ignore,
             IambAction::Homeserver(..) => SequenceStatus::Ignore,
             IambAction::Keys(..) => SequenceStatus::Ignore,
             IambAction::Message(..) => SequenceStatus::Ignore,
@@ -879,6 +915,7 @@ impl ApplicationAction for IambAction {
         match self {
             IambAction::ChangeTheme(..) => false,
             IambAction::ClearUnreads => false,
+            IambAction::Pick(..) => false,
             IambAction::Homeserver(..) => false,
             IambAction::Message(..) => false,
             IambAction::Space(..) => false,

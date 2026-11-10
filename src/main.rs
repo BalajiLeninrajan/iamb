@@ -52,10 +52,11 @@ use tracing::Level;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
-use crate::base::{HomeserverAction, KeysAction};
+use crate::base::{HomeserverAction, KeysAction, PickRooms, PickerKind};
 use crate::completions::IambCompleter;
 use crate::config::{CursorShape, Iamb};
 use crate::keybindings::{HintedBindings, SharedPendingKeys};
+use crate::picker::{Picker, PickerEvent, reaction_items};
 use crate::prelude::*;
 use crate::util::{restore_tty, setup_tty};
 use crate::windows::IambWindow;
@@ -70,6 +71,7 @@ mod keybindings;
 mod message;
 mod notifications;
 mod oauth;
+mod picker;
 mod prelude;
 mod preview;
 mod util;
@@ -250,6 +252,9 @@ struct Application {
     /// The keys that can finish the macro the user is typing, shown as a menu.
     pending_keys: SharedPendingKeys,
 
+    /// The fuzzy picker shown over the screen, if one is open. It takes every key until it closes.
+    picker: Option<Picker>,
+
     /// Pending actions to run.
     actstack: VecDeque<(ProgramAction, ProgramContext)>,
 
@@ -294,6 +299,7 @@ impl Application {
             theme,
             bindings,
             pending_keys,
+            picker: None,
             actstack,
             screen,
             focused: true,
@@ -322,6 +328,7 @@ impl Application {
 
         let theme = store.application.settings.theme.clone();
         let pending = self.pending_keys.lock().map(|p| p.clone()).unwrap_or_default();
+        let picker = &mut self.picker;
 
         term.draw(|f| {
             let area = f.area();
@@ -351,6 +358,12 @@ impl Application {
                 .completion_style_selected(theme.completion.selected)
                 .focus(focused);
             f.render_stateful_widget(screen, area, sstate);
+
+            if let Some(picker) = picker {
+                // The picker draws its own cursor after the query, so leave the terminal's hidden.
+                picker.draw(f, area, &theme);
+                return;
+            }
 
             if hide_cursor {
                 return;
@@ -491,6 +504,11 @@ impl Application {
                     // We'll redraw for the new size next time step() is called.
                 },
                 Event::Paste(s) => {
+                    if let Some(picker) = self.picker.as_mut() {
+                        picker.paste(&s);
+                        continue;
+                    }
+
                     let act = InsertTextAction::Transcribe(s, MoveDir1D::Previous, 1.into());
                     let act = EditorAction::from(act);
                     let ctx = ProgramContext::default();
@@ -671,6 +689,12 @@ impl Application {
                 None
             },
 
+            IambAction::Pick(kind) => {
+                self.picker = Some(self.open_picker(kind, ctx, store)?);
+
+                None
+            },
+
             IambAction::ToggleScrollbackFocus => {
                 self.screen.current_window_mut()?.focus_toggle();
 
@@ -759,6 +783,46 @@ impl Application {
         };
 
         Ok(info)
+    }
+
+    /// Build the fuzzy picker for an [IambAction::Pick].
+    fn open_picker(
+        &mut self,
+        kind: PickerKind,
+        ctx: ProgramContext,
+        store: &mut ProgramStore,
+    ) -> IambResult<Picker> {
+        let (title, items) = match kind {
+            PickerKind::Reactions => {
+                // Fail now instead of after the user has gone through the list.
+                if !self.screen.current_window_mut()?.shows_messages() {
+                    return Err(IambError::NoSelectedMessage.into());
+                }
+
+                ("Reactions", reaction_items(&store.application.settings.theme))
+            },
+            PickerKind::Rooms(rooms) => {
+                let rooms = match rooms {
+                    Some(rooms) => rooms,
+                    None => self.screen.current_window_mut()?.pick_rooms(),
+                };
+                let title = match rooms {
+                    PickRooms::Chats => "Chats",
+                    PickRooms::Dms => "DMs",
+                    PickRooms::Rooms => "Rooms",
+                    PickRooms::Spaces => "Spaces",
+                    PickRooms::Space(_) => "Rooms in this space",
+                };
+
+                (title, windows::room_picker_items(&rooms, store))
+            },
+        };
+
+        if items.is_empty() {
+            return Err(UIError::Failure("There is nothing to pick from".into()));
+        }
+
+        Ok(Picker::new(title, items, ctx))
     }
 
     async fn homeserver_command(
@@ -1030,7 +1094,18 @@ impl Application {
         while self.screen.tabs() != 0 {
             let key = self.step().await?;
 
-            self.bindings.input_key(key);
+            if let Some(picker) = self.picker.as_mut() {
+                match picker.input_key(&key) {
+                    PickerEvent::Pending => {},
+                    PickerEvent::Cancel => self.picker = None,
+                    PickerEvent::Accept(action, ctx) => {
+                        self.picker = None;
+                        self.actstack.push_back((action, ctx));
+                    },
+                }
+            } else {
+                self.bindings.input_key(key);
+            }
 
             let mut locked = store.lock().await;
             let mut keyskip = false;
