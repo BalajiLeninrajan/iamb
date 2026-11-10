@@ -2141,6 +2141,7 @@ mod tests {
             room_type_show: true,
             room_type: RoomType::Room,
             section: None,
+            parents: vec![],
         };
 
         // This should return the room ID, and not the alias or name:
