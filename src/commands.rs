@@ -15,6 +15,8 @@ use crate::base::{
     IambJoinRule,
     KeysAction,
     MemberUpdateAction,
+    PickRooms,
+    PickerKind,
     ProgramCommand,
     ProgramCommands,
     RoomField,
@@ -357,13 +359,38 @@ fn iamb_edit(desc: CommandDescription, ctx: &mut ProgContext) -> ProgResult {
 fn iamb_react(desc: CommandDescription, ctx: &mut ProgContext) -> ProgResult {
     let mut args = desc.arg.strings()?;
 
-    if args.len() != 1 {
+    if args.len() > 1 {
         return Result::Err(CommandError::InvalidArgument);
     }
 
-    let react = args.remove(0);
-    let mact = IambAction::from(MessageAction::React(react, desc.bang));
-    let step = CommandStep::Continue(mact.into(), ctx.context.clone());
+    let act = match args.pop() {
+        Some(react) => IambAction::from(MessageAction::React(react, desc.bang)),
+        // With no Emoji named, let the user pick one from a list.
+        None => IambAction::Pick(PickerKind::Reactions),
+    };
+    let step = CommandStep::Continue(act.into(), ctx.context.clone());
+
+    return Ok(step);
+}
+
+fn iamb_pick(desc: CommandDescription, ctx: &mut ProgContext) -> ProgResult {
+    let mut args = desc.arg.strings()?;
+
+    if args.len() > 1 {
+        return Result::Err(CommandError::InvalidArgument);
+    }
+
+    let rooms = match args.pop().as_deref() {
+        None => None,
+        Some("chats") => Some(PickRooms::Chats),
+        Some("dms") => Some(PickRooms::Dms),
+        Some("rooms") => Some(PickRooms::Rooms),
+        Some("spaces") => Some(PickRooms::Spaces),
+        Some(_) => return Result::Err(CommandError::InvalidArgument),
+    };
+
+    let act = IambAction::Pick(PickerKind::Rooms(rooms));
+    let step = CommandStep::Continue(act.into(), ctx.context.clone());
 
     return Ok(step);
 }
@@ -1231,6 +1258,7 @@ pub fn add_iamb_commands(cmds: &mut ProgramCommands) {
         aliases: vec![],
         f: iamb_react,
     });
+    cmds.add_command(ProgramCommand { name: "pick".into(), aliases: vec![], f: iamb_pick });
     cmds.add_command(ProgramCommand { name: "pin".into(), aliases: vec![], f: iamb_pin });
     cmds.add_command(ProgramCommand {
         name: "pinned".into(),
@@ -1923,6 +1951,44 @@ mod tests {
             false,
         ));
         assert_eq!(res, vec![(act.into(), ctx.clone())]);
+    }
+
+    #[test]
+    fn test_cmd_react() {
+        let mut cmds = setup_test_commands();
+        let ctx = EditContext::default();
+
+        let res = cmds.input_cmd("react party", ctx.clone()).unwrap();
+        let act = IambAction::Message(MessageAction::React("party".into(), false));
+        assert_eq!(res, vec![(act.into(), ctx.clone())]);
+
+        // Naming no Emoji opens the picker.
+        let res = cmds.input_cmd("react", ctx.clone()).unwrap();
+        let act = IambAction::Pick(PickerKind::Reactions);
+        assert_eq!(res, vec![(act.into(), ctx.clone())]);
+
+        let res = cmds.input_cmd("react party tada", ctx.clone());
+        assert_eq!(res, Err(CommandError::InvalidArgument));
+    }
+
+    #[test]
+    fn test_cmd_pick() {
+        let mut cmds = setup_test_commands();
+        let ctx = EditContext::default();
+
+        let res = cmds.input_cmd("pick", ctx.clone()).unwrap();
+        let act = IambAction::Pick(PickerKind::Rooms(None));
+        assert_eq!(res, vec![(act.into(), ctx.clone())]);
+
+        let res = cmds.input_cmd("pick spaces", ctx.clone()).unwrap();
+        let act = IambAction::Pick(PickerKind::Rooms(Some(PickRooms::Spaces)));
+        assert_eq!(res, vec![(act.into(), ctx.clone())]);
+
+        let res = cmds.input_cmd("pick nonsense", ctx.clone());
+        assert_eq!(res, Err(CommandError::InvalidArgument));
+
+        let res = cmds.input_cmd("pick chats dms", ctx.clone());
+        assert_eq!(res, Err(CommandError::InvalidArgument));
     }
 
     #[test]

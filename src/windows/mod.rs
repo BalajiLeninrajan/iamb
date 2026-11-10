@@ -23,6 +23,7 @@ use modalkit_ratatui::list::{List, ListCursor, ListItem, ListState};
 use ratatui::prelude::Stylize;
 
 use crate::base::{
+    PickRooms,
     RoomView,
     SortColumn,
     SortFieldRoom,
@@ -34,9 +35,10 @@ use crate::base::{
 };
 use crate::config::RoomLabel;
 use crate::config::theme::ThemeRoomsValues;
+use crate::picker::PickerItem;
 use crate::prelude::*;
 use crate::resolve_mxid;
-use crate::windows::room::{RoomState, room_command};
+use crate::windows::room::{RoomState, room_command, space_children};
 use crate::windows::verify::VerifyItem;
 use crate::windows::welcome::WelcomeState;
 
@@ -507,6 +509,52 @@ fn room_prompt(
     }
 }
 
+/// Build the rows of a fuzzy picker over rooms, in the order their list window shows them.
+pub fn room_picker_items(kind: &PickRooms, store: &mut ProgramStore) -> Vec<PickerItem> {
+    let items = if let PickRooms::Space(space_id) = kind {
+        space_children(space_id, &mut store.application)
+    } else {
+        let ChatStore {
+            collator,
+            rooms,
+            spaces,
+            settings,
+            sync_info,
+            worker,
+            ..
+        } = &mut store.application;
+        let sort = &settings.tunables.sort;
+
+        let (listed, fields, show_type): (Vec<&MatrixRoom>, _, _) = match kind {
+            PickRooms::Dms => (sync_info.dms.iter().collect(), &sort.dms, false),
+            PickRooms::Rooms => (sync_info.rooms.iter().collect(), &sort.rooms, false),
+            PickRooms::Spaces => (sync_info.spaces.iter().collect(), &sort.spaces, false),
+            PickRooms::Chats | PickRooms::Space(_) => {
+                let chats = sync_info.rooms.iter().chain(sync_info.dms.iter());
+
+                (chats.collect(), &sort.chats, true)
+            },
+        };
+
+        let mut items = listed
+            .into_iter()
+            .map(|room| {
+                let info = rooms.get_or_default(room.room_id().to_owned());
+
+                GenericRoomItem::new(room, info, &worker.client, spaces).show_room_type(show_type)
+            })
+            .collect::<Vec<_>>();
+        items.sort_by(|a, b| room_fields_cmp(a, b, fields, collator));
+
+        items
+    };
+
+    let theme = &store.application.settings.theme;
+    let order = store.application.settings.tunables.room_labels.as_slice();
+
+    items.iter().map(|item| item.picker_item(theme, order)).collect()
+}
+
 macro_rules! delegate {
     ($s: expr, $id: ident => $e: expr) => {
         match $s {
@@ -544,6 +592,23 @@ pub enum IambWindow {
 }
 
 impl IambWindow {
+    /// The rooms a fuzzy picker opened from this window lists: the same ones as this window when
+    /// it is a list of rooms, and every chat otherwise.
+    pub fn pick_rooms(&self) -> PickRooms {
+        match self {
+            IambWindow::DirectList(_) => PickRooms::Dms,
+            IambWindow::RoomList(_) => PickRooms::Rooms,
+            IambWindow::SpaceList(_) | IambWindow::ToplevelSpaceList(_) => PickRooms::Spaces,
+            IambWindow::Room(RoomState::Space(space)) => PickRooms::Space(space.id().to_owned()),
+            _ => PickRooms::Chats,
+        }
+    }
+
+    /// Whether this window is one where a message can be selected.
+    pub fn shows_messages(&self) -> bool {
+        matches!(self, IambWindow::Room(RoomState::Chat(_) | RoomState::Message(_)))
+    }
+
     pub fn focus_toggle(&mut self) {
         if let IambWindow::Room(w) = self {
             w.focus_toggle()
@@ -1534,6 +1599,23 @@ impl GenericRoomItem {
     fn show_room_type(mut self, show: bool) -> Self {
         self.room_type_show = show;
         self
+    }
+
+    /// Show this room as a row of a fuzzy picker. Picking the row opens the room.
+    fn picker_item(&self, theme: &ThemeValues, order: &[RoomLabel]) -> PickerItem {
+        let (unreads, name_style, tags_style) = unreads_and_style(&self.unread, &theme.rooms);
+        let (name, labels) = self.name_and_labels(name_style, tags_style, order);
+        let mut spans = vec![name];
+        append_tags(labels, &mut spans, tags_style);
+
+        let text = spans
+            .into_iter()
+            .map(|span| (span.content.into_owned(), span.style))
+            .collect();
+        let room = IambId::Room(self.room_id.clone().into(), RoomView::Main);
+        let open = WindowAction::Switch(OpenTarget::Application(room), OpenFlags::NONE);
+
+        PickerItem { prefix: vec![unreads], text, action: open.into() }
     }
 
     fn set_section<T: SortedSection>(&mut self, fields: &[SortColumn<T>]) {

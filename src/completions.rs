@@ -616,6 +616,11 @@ fn complete_cmdarg(
 
         "logout" => complete_iamb_logout(args, store),
 
+        "pick" if args.len() == 1 => {
+            complete_choices(&args[0], &["chats", "dms", "rooms", "spaces"])
+        },
+        "pick" => vec![],
+
         "react" if args.len() == 1 => complete_emoji(&args[0], store),
         "react" => vec![],
 

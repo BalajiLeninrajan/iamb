@@ -280,6 +280,46 @@ fn space_child_cmp<T: RoomLikeItem>(
     }
 }
 
+/// List the rooms in a space that are joined or have a cached preview, in the order the space's
+/// window shows them.
+pub fn space_children(space_id: &RoomId, app: &mut ChatStore) -> Vec<GenericRoomItem> {
+    let ChatStore {
+        rooms,
+        spaces,
+        worker,
+        settings,
+        collator,
+        room_previews,
+        ..
+    } = app;
+
+    let Some(info) = spaces.get(space_id) else {
+        return vec![];
+    };
+
+    let mut items = info
+        .children
+        .keys()
+        .filter_map(|id| {
+            if let Some(room) = worker.client.get_room(id) {
+                let info = rooms.get_or_default(id.to_owned());
+                let item = GenericRoomItem::new(&room, info, &worker.client, spaces);
+
+                Some(item.hide_parent(space_id))
+            } else if let Some((Ok(preview), _)) = room_previews.get(id.as_str()) {
+                Some(GenericRoomItem::new_preview(id.to_owned(), preview))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let fields = &settings.tunables.sort.space;
+    items.sort_by(|a, b| space_fields_cmp(a, b, fields, collator, info));
+
+    items
+}
+
 /// Compare two space children according the configured sort criteria.
 fn space_fields_cmp<T: RoomLikeItem>(
     a: &T,
