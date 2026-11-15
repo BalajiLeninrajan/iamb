@@ -1124,6 +1124,7 @@ pub struct TunableValues {
     pub proxy: ProxyValues,
     pub reaction_display: bool,
     pub reaction_shortcode_display: bool,
+    pub reaction_user_display: bool,
     pub read_receipt_send: bool,
     pub read_receipt_trigger: ReadReceiptTrigger,
     pub read_receipt_display: bool,
@@ -1194,6 +1195,7 @@ pub struct Tunables {
     pub normal_after_send: Option<bool>,
     pub reaction_display: Option<bool>,
     pub reaction_shortcode_display: Option<bool>,
+    pub reaction_user_display: Option<bool>,
     pub read_receipt_send: Option<bool>,
     pub read_receipt_trigger: Option<ReadReceiptTrigger>,
     pub read_receipt_display: Option<bool>,
@@ -1262,6 +1264,7 @@ impl Tunables {
             reaction_shortcode_display: self
                 .reaction_shortcode_display
                 .or(other.reaction_shortcode_display),
+            reaction_user_display: self.reaction_user_display.or(other.reaction_user_display),
             read_receipt_send: self.read_receipt_send.or(other.read_receipt_send),
             read_receipt_trigger: self.read_receipt_trigger.or(other.read_receipt_trigger),
             read_receipt_display: self.read_receipt_display.or(other.read_receipt_display),
@@ -1319,6 +1322,7 @@ impl Tunables {
             normal_after_send: self.normal_after_send.unwrap_or(false),
             reaction_display: self.reaction_display.unwrap_or(true),
             reaction_shortcode_display: self.reaction_shortcode_display.unwrap_or(false),
+            reaction_user_display: self.reaction_user_display.unwrap_or(true),
             read_receipt_send: self.read_receipt_send.unwrap_or(true),
             read_receipt_trigger: self.read_receipt_trigger.unwrap_or_default(),
             read_receipt_display: self.read_receipt_display.unwrap_or(true),

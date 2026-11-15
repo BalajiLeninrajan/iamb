@@ -112,6 +112,9 @@ impl Messages {
 const READ_GUTTER: usize = 5;
 const MIN_MSG_LEN: usize = 30;
 
+/// How many of the users who reacted are named after each reaction.
+const MAX_REACTION_USERS: usize = 10;
+
 const USIZE_TOO_SMALL: bool = usize::BITS < u64::BITS;
 
 /// Convert the [u64] hash to [usize] as needed.
@@ -923,7 +926,7 @@ impl<'a> MessageFormatter<'a> {
         let mut reactions = 0;
         let mut protos = Vec::new();
 
-        for (key, count, source) in counts {
+        for (key, users, source) in counts {
             if reactions != 0 {
                 emojis.push_str(" ", style);
             }
@@ -971,7 +974,21 @@ impl<'a> MessageFormatter<'a> {
             }
             emojis.push_str(name, style);
             emojis.push_str(" ", style);
-            emojis.push_span_nobreak(Span::styled(count.len().to_string(), style));
+            emojis.push_span_nobreak(Span::styled(users.len().to_string(), style));
+            if self.settings.tunables.reaction_user_display {
+                for (i, user_id) in users.iter().take(MAX_REACTION_USERS).enumerate() {
+                    emojis.push_str(if i == 0 { " " } else { ", " }, style);
+
+                    let mut name = self.settings.get_user_span(user_id, self.info);
+                    name.style = style.patch(name.style);
+                    emojis.push_span_nobreak(name);
+                }
+
+                if let Some(rest) = users.len().checked_sub(MAX_REACTION_USERS).filter(|n| *n > 0) {
+                    emojis.push_str(" ", style);
+                    emojis.push_span_nobreak(Span::styled(format!("+{rest}"), style));
+                }
+            }
             emojis.push_str("]", style);
 
             reactions += 1;
@@ -1708,7 +1725,7 @@ pub mod tests {
     };
 
     use crate::base::EventLocation;
-    use crate::config::time_gutter_width;
+    use crate::config::{UserDisplayStyle, time_gutter_width};
     use crate::tests::*;
 
     #[test]
@@ -2117,6 +2134,58 @@ pub mod tests {
         info.user_receipts.remove(&ReceiptThread::Thread(root));
         info.set_receipt(ReceiptThread::Main, user_id, MSG1_EVID.clone());
         assert!(!msg.show_trackbar(Some(&prev), &info, &settings));
+    }
+
+    #[test]
+    fn test_show_msg_reaction_users() {
+        let mut settings = mock_settings();
+        settings.tunables.username_display = UserDisplayStyle::DisplayName;
+        let previews = PreviewManager::new(&settings);
+        let mut info = mock_room();
+
+        let content = RoomMessageEventContent::text_plain("hello");
+        let msg = mock_room1_message(content, TEST_USER1.clone(), MSG1_KEY.clone());
+        let event_id = msg.event.event_id().unwrap().to_owned();
+
+        let react = |info: &mut RoomInfo, n: usize, key: &str, user: OwnedUserId| {
+            let id = OwnedEventId::try_from(format!("$react{n}")).unwrap();
+            info.reactions
+                .entry(event_id.clone())
+                .or_default()
+                .insert(id, (key.to_string(), user, None));
+        };
+        react(&mut info, 0, "+1", TEST_USER1.clone());
+        react(&mut info, 1, "+1", TEST_USER2.clone());
+
+        let render = |settings: &ApplicationSettings, info: &RoomInfo| -> String {
+            let text = msg.show(None, false, 200, info, settings, &previews);
+
+            // The reactions wrap, so join their lines back together.
+            text.lines
+                .iter()
+                .map(|line| {
+                    let s: String = line.spans.iter().map(|span| span.content.as_ref()).collect();
+                    s.trim().to_string()
+                })
+                .skip_while(|line| !line.starts_with('['))
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+
+        // Users are named after the count, by display name when there is one.
+        assert_eq!(render(&settings, &info), "[+1 2 @user1:example.com, User 2]");
+
+        // Past the first ten, the rest are only counted.
+        for n in 0..12 {
+            let user = OwnedUserId::try_from(format!("@extra{n:02}:example.com")).unwrap();
+            react(&mut info, n + 2, "+1", user);
+        }
+        let shown = render(&settings, &info);
+        assert!(shown.starts_with("[+1 14 @extra00:example.com, "), "{shown}");
+        assert!(shown.ends_with("@extra09:example.com +4]"), "{shown}");
+
+        settings.tunables.reaction_user_display = false;
+        assert_eq!(render(&settings, &info), "[+1 14]");
     }
 
     #[test]

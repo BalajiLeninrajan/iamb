@@ -47,6 +47,7 @@ message_shortcode_display = false
 open_command = ["my-open", "--file"]
 reaction_display = true
 reaction_shortcode_display = false
+reaction_user_display = true
 read_receipt_display = true
 read_receipt_send = true
 room_labels = ["membership", "muted", "network", "tags"]
