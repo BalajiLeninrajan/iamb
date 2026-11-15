@@ -174,6 +174,7 @@ pub fn mock_tunables() -> TunableValues {
         proxy: Proxy::default().values(),
         reaction_display: true,
         reaction_shortcode_display: false,
+        reaction_user_display: true,
         read_receipt_send: true,
         read_receipt_trigger: Default::default(),
         read_receipt_display: true,
